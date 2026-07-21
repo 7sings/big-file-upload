@@ -1,13 +1,13 @@
 services:
   - type: keyvalue
     name: big-upload-redis
-    plan: starter
+    plan: free
     ipAllowList: []
 
   - type: web
     name: big-file-upload
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build
     preDeployCommand: npm run migrate
     startCommand: npm start
