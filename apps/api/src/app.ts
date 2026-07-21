@@ -52,10 +52,10 @@ export async function buildApp(deps:AppDependencies={}):Promise<BuiltApp>{
   const config=loadConfig(deps.config); const ownDb=!deps.db; const ownKv=!deps.kv;
   const db=deps.db??Database.connect(config.databaseUrl,config.databaseAuthToken); await db.migrate();
   const kv=deps.kv??(config.redisDriver==='redis'?await RedisKvStore.connect(config.redisUrl!):new MemoryKvStore());
-  const mailer=deps.mailer??(config.mailDriver==='smtp'?new NodemailerMailer({host:config.smtpHost!,port:config.smtpPort,secure:config.smtpSecure,user:config.smtpUser,pass:config.smtpPass,from:config.mailFrom}):new ConsoleMailer());
-  const storage=deps.storage??(config.storageDriver==='r2'?new R2StorageProvider(config.r2Bucket!,{endpoint:config.r2Endpoint!,region:config.r2Region,accessKeyId:config.r2AccessKeyId!,secretAccessKey:config.r2SecretAccessKey!}):new LocalStorageProvider(config.localStoragePath,config.publicOrigin,config.localSigningSecret));
   const app=Fastify({logger:{level:config.logLevel},bodyLimit:1024*1024,routerOptions:{maxParamLength:512},trustProxy:config.nodeEnv==='production'}).withTypeProvider<TypeBoxTypeProvider>();
   const telemetry=new Telemetry(app.log);
+  const mailer=deps.mailer??(config.mailDriver==='smtp'?new NodemailerMailer({host:config.smtpHost!,port:config.smtpPort,secure:config.smtpSecure,user:config.smtpUser,pass:config.smtpPass,from:config.mailFrom,logger:app.log}):new ConsoleMailer());
+  const storage=deps.storage??(config.storageDriver==='r2'?new R2StorageProvider(config.r2Bucket!,{endpoint:config.r2Endpoint!,region:config.r2Region,accessKeyId:config.r2AccessKeyId!,secretAccessKey:config.r2SecretAccessKey!}):new LocalStorageProvider(config.localStoragePath,config.publicOrigin,config.localSigningSecret));
   await app.register(helmet); await app.register(cookie,{secret:config.cookieSecret}); await app.register(cors,{origin:config.appOrigin,credentials:true,exposedHeaders:['etag','content-length','content-range']});
   let servesWeb=false;const webDist=fileURLToPath(new URL('../../web/dist/',import.meta.url));
   if(config.nodeEnv==='production'){try{await access(webDist);await app.register(fastifyStatic,{root:webDist,prefix:'/'});servesWeb=true}catch{app.log.warn({webDist},'Web dist directory is unavailable; API-only mode enabled')}}
