@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@big-upload/shared": ["../../packages/shared/src/index.ts"],
+      "@big-upload/upload-core": ["../../packages/upload-core/src/index.ts"]
+    },
+    "types": ["vite/client", "vitest/globals"],
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.app.tsbuildinfo"
+  },
+  "include": ["src", "test"]
+}

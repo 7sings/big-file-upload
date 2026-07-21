@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {
+      "id": "abort-incomplete-multipart-after-one-day",
+      "enabled": true,
+      "conditions": { "prefix": "quarantine/" },
+      "abortMultipartUploadsTransition": { "condition": { "maxAge": 86400 } }
+    }
+  ]
+}

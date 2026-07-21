@@ -1,0 +1,30 @@
+{
+  "name": "big-file-upload",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w @big-upload/api\" \"npm run dev -w @big-upload/web\"",
+    "build": "npm run build -w @big-upload/shared && npm run build -w @big-upload/upload-core && npm run build -w @big-upload/web && npm run build -w @big-upload/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "migrate": "npm run migrate -w @big-upload/api",
+    "cleanup": "npm run cleanup -w @big-upload/api",
+    "start": "npm run start -w @big-upload/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": { "node": ">=20" }
+}

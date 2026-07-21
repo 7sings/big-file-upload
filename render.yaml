@@ -1,0 +1,93 @@
+services:
+  - type: keyvalue
+    name: big-upload-redis
+    plan: starter
+    ipAllowList: []
+
+  - type: web
+    name: big-file-upload
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run migrate
+    startCommand: npm start
+    healthCheckPath: /health/live
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_DRIVER
+        value: redis
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: big-upload-redis
+          property: connectionString
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: MAIL_DRIVER
+        value: smtp
+      - key: APP_ORIGIN
+        sync: false
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: OTP_PEPPER
+        generateValue: true
+      - key: LOCAL_SIGNING_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURE
+        value: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+
+  - type: cron
+    name: big-file-upload-cleanup
+    runtime: node
+    schedule: "17 * * * *"
+    buildCommand: npm ci && npm run build
+    startCommand: npm run cleanup
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_DRIVER
+        value: redis
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: big-upload-redis
+          property: connectionString
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
