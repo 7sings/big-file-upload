@@ -47,6 +47,17 @@ services:
         value: 587
       - key: SMTP_SECURE
         value: false
+      # Render 当前无可用 IPv6 SMTP 出站路由；保持 SMTP_HOST 为域名并仅通过 IPv4 建连。
+      - key: SMTP_ADDRESS_FAMILY
+        value: ipv4
+      - key: SMTP_DNS_TIMEOUT_MS
+        value: 3000
+      - key: SMTP_CONNECTION_TIMEOUT_MS
+        value: 8000
+      - key: SMTP_GREETING_TIMEOUT_MS
+        value: 8000
+      - key: SMTP_SOCKET_TIMEOUT_MS
+        value: 15000
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASS

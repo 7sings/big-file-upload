@@ -1,5 +1,6 @@
 export type RedisDriver = 'memory' | 'redis';
 export type MailDriver = 'console' | 'smtp';
+export type SmtpAddressFamily = 'auto' | 'ipv4';
 export type StorageDriver = 'local' | 'r2';
 
 function int(name: string, fallback: number): number {
@@ -8,6 +9,20 @@ function int(name: string, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer`);
   return parsed;
+}
+
+function positiveInt(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
+function port(name: string, fallback: number): number {
+  const value = positiveInt(name, fallback);
+  if (value > 65535) throw new Error(`${name} must be between 1 and 65535`);
+  return value;
 }
 
 function bool(name: string, fallback: boolean): boolean {
@@ -30,6 +45,7 @@ export interface Config {
   databaseUrl: string; databaseAuthToken?: string;
   redisDriver: RedisDriver; redisUrl?: string;
   mailDriver: MailDriver; smtpHost?: string; smtpPort: number; smtpSecure: boolean; smtpUser?: string; smtpPass?: string; mailFrom: string;
+  smtpAddressFamily: SmtpAddressFamily; smtpDnsTimeoutMs: number; smtpConnectionTimeoutMs: number; smtpGreetingTimeoutMs: number; smtpSocketTimeoutMs: number;
   storageDriver: StorageDriver; localStoragePath: string;
   r2Endpoint?: string; r2Region: string; r2Bucket?: string; r2AccessKeyId?: string; r2SecretAccessKey?: string;
   maxFileSizeBytes: number; maxActiveUploadsPerUser: number; uploadStaleAfterSeconds: number;
@@ -49,8 +65,11 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     databaseUrl: process.env.DATABASE_URL || 'file:.data/app.db', databaseAuthToken: process.env.DATABASE_AUTH_TOKEN || undefined,
     redisDriver: choice('REDIS_DRIVER', ['memory', 'redis'] as const, 'memory'), redisUrl: process.env.REDIS_URL || undefined,
     mailDriver: choice('MAIL_DRIVER', ['console', 'smtp'] as const, 'console'), smtpHost: process.env.SMTP_HOST || undefined,
-    smtpPort: int('SMTP_PORT', 587), smtpSecure: bool('SMTP_SECURE', false), smtpUser: process.env.SMTP_USER || undefined,
+    smtpPort: port('SMTP_PORT', 587), smtpSecure: bool('SMTP_SECURE', false), smtpUser: process.env.SMTP_USER || undefined,
     smtpPass: process.env.SMTP_PASS || undefined, mailFrom: process.env.MAIL_FROM || 'Big Upload <no-reply@example.com>',
+    smtpAddressFamily: choice('SMTP_ADDRESS_FAMILY', ['auto', 'ipv4'] as const, 'auto'),
+    smtpDnsTimeoutMs: positiveInt('SMTP_DNS_TIMEOUT_MS', 3000), smtpConnectionTimeoutMs: positiveInt('SMTP_CONNECTION_TIMEOUT_MS', 8000),
+    smtpGreetingTimeoutMs: positiveInt('SMTP_GREETING_TIMEOUT_MS', 8000), smtpSocketTimeoutMs: positiveInt('SMTP_SOCKET_TIMEOUT_MS', 15000),
     storageDriver: choice('STORAGE_DRIVER', ['local', 'r2'] as const, 'local'), localStoragePath: process.env.LOCAL_STORAGE_PATH || '.data/storage',
     r2Endpoint: process.env.R2_ENDPOINT || undefined, r2Region: process.env.R2_REGION || 'auto', r2Bucket: process.env.R2_BUCKET || undefined,
     r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || undefined, r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || undefined,

@@ -64,7 +64,9 @@ npm run build
 - Turso：`DATABASE_URL`、`DATABASE_AUTH_TOKEN`
 - Render Key Value：`REDIS_URL`
 - R2：`R2_ENDPOINT`、`R2_BUCKET`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
-- SMTP：`SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`MAIL_FROM`
+- SMTP：`SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`MAIL_FROM`、`SMTP_ADDRESS_FAMILY` 和各项 `SMTP_*_TIMEOUT_MS`
+
+Render 使用 QQ SMTP 时保留 `SMTP_HOST=smtp.qq.com` 这样的域名，不要填写某个固定 IP。Render Blueprint 已将 `SMTP_ADDRESS_FAMILY` 设为 `ipv4`，用动态 DNS 的 A 记录避开无 IPv6 出站路由的运行环境；其它双栈环境可使用默认的 `auto`。587 使用 STARTTLS，应配置 `SMTP_SECURE=false`；465 使用直接 TLS，通常配置 `SMTP_SECURE=true`。SMTP 网络异常会在配置的短超时内返回失败，客户端可重试，不会等待 Nodemailer 的分钟级默认超时。
 
 使用 `render.yaml` 创建 Web Service、Key Value 和每小时清理 Cron。将 `infra/r2-cors.json` 中的域名替换为真实 Render 域名，并在 R2 上配置 1 天后中止未完成 multipart 的生命周期规则。
 
