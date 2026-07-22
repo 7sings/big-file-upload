@@ -26,6 +26,10 @@ function formatDate(value: number) {
   const date = new Date(value < 10_000_000_000 ? value * 1000 : value);
   return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
+function formatNetworkEstimate() {
+  const connection = (navigator as Navigator & { connection?: { downlink?: number } }).connection;
+  return connection?.downlink && connection.downlink > 0 ? `网络估算 ${connection.downlink} Mbps` : null;
+}
 
 function Login({ onLogin }: { onLogin: (user: CurrentUser) => void }) {
   const [email, setEmail] = useState('');
@@ -56,7 +60,7 @@ function Login({ onLogin }: { onLogin: (user: CurrentUser) => void }) {
   }
 
   return <main className="login-shell">
-    <section className="login-copy"><div className="brand"><span className="brand-mark">F</span><span>FlowDock</span></div><p className="eyebrow">大文件传输基础设施</p><h1>把超大文件，<br />稳稳送达。</h1><p className="hero-note">分片直传、断点恢复与浏览器端指纹计算，面向真实网络环境设计。</p><div className="feature-line"><span>01</span> 动态并发与智能重试</div><div className="feature-line"><span>02</span> 关闭页面后仍可恢复</div><div className="feature-line"><span>03</span> 内容校验与安全预览</div></section>
+    <section className="login-copy"><div className="brand"><span className="brand-mark">R</span><span>Rock File</span></div><p className="eyebrow">大文件传输基础设施</p><h1>把超大文件，<br />稳稳送达。</h1><p className="hero-note">分片直传、断点恢复与浏览器端指纹计算，面向真实网络环境设计。</p><div className="feature-line"><span>01</span> 动态并发与智能重试</div><div className="feature-line"><span>02</span> 关闭页面后仍可恢复</div><div className="feature-line"><span>03</span> 内容校验与安全预览</div></section>
     <section className="login-panel"><div className="login-card"><p className="eyebrow">安全登录</p><h2>{challengeId ? '输入邮箱验证码' : '登录上传工作台'}</h2><p className="muted">{challengeId ? `验证码已发送至 ${email}` : '使用邮箱验证码确认身份，无需记住密码。'}</p>
       {!challengeId ? <form onSubmit={requestCode}><label>邮箱地址<input type="email" required autoComplete="email" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" /></label><button className="primary wide" disabled={busy}>{busy ? '发送中…' : '获取验证码'}</button></form>
       : <form onSubmit={verify}><label>6 位验证码<input className="otp-input" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" /></label><button className="primary wide" disabled={busy || code.length !== 6}>{busy ? '验证中…' : '进入工作台'}</button><button type="button" className="text-button" disabled={busy || cooldown > 0} onClick={() => void resend()}>{cooldown ? `${cooldown} 秒后可重新发送` : '重新发送验证码'}</button></form>}
@@ -73,7 +77,7 @@ function UploadRow({ item, manager }: { item: UploadView; manager: UploadManager
     <div className={`file-glyph ${item.fileType.split('/')[0]}`}><span>{item.fileName.split('.').pop()?.slice(0, 4).toUpperCase()}</span></div>
     <div className="upload-main"><div className="row-top"><div><strong title={item.fileName}>{item.fileName}</strong><span>{formatBytes(item.fileSize)} · {statusText[item.status] ?? item.status}{item.needsFile ? ' · 需重新选择原文件' : ''}</span></div><b>{Math.round(ratio * 100)}%</b></div>
       <div className="progress"><i style={{ width: `${ratio * 100}%` }} /></div>
-      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `${formatBytes(item.speed)}/s` : statusText[item.status]}</span><span>剩余 {formatEta(item.etaSeconds)}</span><span>{item.uploadedParts.length}/{item.totalParts ?? '—'} 分片</span></div>
+      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `实时速率 ${formatBytes(item.speed)}/s` : statusText[item.status]}</span>{formatNetworkEstimate() && <span>{formatNetworkEstimate()}</span>}<span>剩余 {formatEta(item.etaSeconds)}</span>{item.partSize && <span>动态分片 {formatBytes(item.partSize)} × {item.totalParts ?? '—'}</span>}<span>{item.uploadedParts.length}/{item.totalParts ?? '—'} 分片</span></div>
       {item.error && <p className="inline-error">{item.error}</p>}
     </div>
     <div className="row-actions">{pausable && <button onClick={() => manager.pause(item.localId)}>暂停</button>}{resumable && <button onClick={() => manager.resume(item.localId)}>{item.needsFile ? '选择原文件' : '继续'}</button>}{!terminal && <button className="danger-link" onClick={() => void manager.cancel(item.localId)}>取消</button>}{terminal && <button onClick={() => void manager.remove(item.localId)}>移除</button>}</div>
@@ -104,15 +108,15 @@ function PreviewModal({ file, onClose }: { file: FileRecord; onClose: () => void
 
 function Workbench({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const manager = useMemo(() => new UploadManager(user.id), [user.id]);
-  const [uploads, setUploads] = useState<UploadView[]>([]); const [files, setFiles] = useState<FileRecord[]>([]); const [dragging, setDragging] = useState(false); const [notice, setNotice] = useState(''); const [preview, setPreview] = useState<FileRecord | null>(null); const input = useRef<HTMLInputElement>(null);
+  const [uploads, setUploads] = useState<UploadView[]>([]); const [files, setFiles] = useState<FileRecord[]>([]); const [maxFileSizeBytes, setMaxFileSizeBytes] = useState<number | null>(null); const [dragging, setDragging] = useState(false); const [notice, setNotice] = useState(''); const [preview, setPreview] = useState<FileRecord | null>(null); const input = useRef<HTMLInputElement>(null);
   const refreshFiles = async () => { try { setFiles(await api.files()); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) { setFiles([]); onLogout(); return; } if (!(reason instanceof ApiError && reason.status === 404)) setNotice(reason instanceof Error ? reason.message : '文件列表加载失败'); } };
-  useEffect(() => { manager.activate(); const unsubscribe = manager.subscribe(setUploads); void manager.restore().catch((reason) => setNotice(reason instanceof Error ? reason.message : '无法恢复本地上传记录')); void refreshFiles(); return () => { unsubscribe(); manager.destroy(); }; }, [manager]);
+  useEffect(() => { manager.activate(); const unsubscribe = manager.subscribe(setUploads); void manager.restore().catch((reason) => setNotice(reason instanceof Error ? reason.message : '无法恢复本地上传记录')); void refreshFiles(); void api.config().then(({ maxFileSizeBytes: size }) => setMaxFileSizeBytes(size)).catch(() => setNotice('无法读取上传大小配置，将由服务端继续校验')); return () => { unsubscribe(); manager.destroy(); }; }, [manager]);
   const succeededCount = uploads.filter((item) => item.status === 'SUCCEEDED').length;
   useEffect(() => {
     if (!succeededCount) return;
     void api.files().then(setFiles).catch((reason) => setNotice(reason instanceof Error ? reason.message : '文件列表加载失败'));
   }, [succeededCount]);
-  async function choose(selected: FileList | File[]) { const list = Array.from(selected); if (!list.length) return; try { const rejected = await manager.addFiles(list); setNotice(rejected.length ? `已忽略不支持的文件：${rejected.join('、')}` : ''); } catch (reason) { setNotice(reason instanceof Error ? reason.message : '无法创建上传任务'); } }
+  async function choose(selected: FileList | File[]) { const list = Array.from(selected); if (!list.length) return; const oversized = maxFileSizeBytes ? list.filter((file) => file.size > maxFileSizeBytes) : []; const accepted = maxFileSizeBytes ? list.filter((file) => file.size <= maxFileSizeBytes) : list; if (!accepted.length) { setNotice(`文件大小不能超过 ${formatBytes(maxFileSizeBytes!)}：${oversized.map((file) => file.name).join('、')}`); return; } try { const rejected = await manager.addFiles(accepted); const messages = [oversized.length ? `文件大小不能超过 ${formatBytes(maxFileSizeBytes!)}：${oversized.map((file) => file.name).join('、')}` : '', rejected.length ? `已忽略不支持的文件：${rejected.join('、')}` : ''].filter(Boolean); setNotice(messages.join('；')); } catch (reason) { setNotice(reason instanceof Error ? reason.message : '无法创建上传任务'); } }
   function download(file: FileRecord) {
     const link = document.createElement('a');
     link.href = api.downloadUrl(file.id);
@@ -121,8 +125,8 @@ function Workbench({ user, onLogout }: { user: CurrentUser; onLogout: () => void
   }
   function onInput(event: ChangeEvent<HTMLInputElement>) { if (event.target.files) void choose(event.target.files); event.target.value = ''; }
   function onDrop(event: DragEvent) { event.preventDefault(); setDragging(false); void choose(event.dataTransfer.files); }
-  return <div className="app-shell"><header className="topbar"><div className="brand"><span className="brand-mark">F</span><span>FlowDock</span></div><nav><a href="#uploads">上传任务</a><a href="#files">文件仓库</a></nav><div className="account"><span>{user.email}</span><button onClick={onLogout}>退出</button></div></header>
-    <main className="workspace"><section className="welcome"><div><p className="eyebrow">传输控制台</p><h1>下午好，开始传输。</h1><p>支持单文件最高 100 GB；分片数据从浏览器直达对象存储。</p></div><div className="network"><i className={navigator.onLine ? 'online' : ''} />{navigator.onLine ? '网络已连接' : '当前离线'}</div></section>
+  return <div className="app-shell"><header className="topbar"><div className="brand"><span className="brand-mark">R</span><span>Rock File</span></div><nav><a href="#uploads">上传任务</a><a href="#files">文件仓库</a></nav><div className="account"><span>{user.email}</span><button onClick={onLogout}>退出</button></div></header>
+    <main className="workspace"><section className="welcome"><div><p className="eyebrow">传输控制台</p><h1>下午好，开始传输。</h1><p>支持单文件最高 {maxFileSizeBytes ? formatBytes(maxFileSizeBytes) : '读取中'}；分片数据从浏览器直达对象存储。</p></div><div className="network"><i className={navigator.onLine ? 'online' : ''} />{navigator.onLine ? '网络已连接' : '当前离线'}</div></section>
       <section className={`drop-zone ${dragging ? 'dragging' : ''}`} onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }} onDrop={onDrop} onClick={() => input.current?.click()}><input ref={input} type="file" multiple accept={ACCEPT_ATTRIBUTE} onChange={onInput} /><div className="upload-symbol">↑</div><h2>拖拽文件到这里</h2><p>或点击选择多个文件 · 图片、音视频、PDF、TXT</p><button className="primary" type="button">选择文件</button></section>
       {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')}>×</button></div>}
       <section id="uploads" className="content-section"><div className="section-head"><div><p className="eyebrow">实时队列</p><h2>上传任务</h2></div><span>{uploads.length} 个任务</span></div><div className="panel">{uploads.length ? uploads.map((item) => <UploadRow key={item.localId} item={item} manager={manager} />) : <div className="empty-state">还没有上传任务，将文件拖到上方开始。</div>}</div></section>
@@ -134,6 +138,6 @@ export default function App() {
   const [user, setUser] = useState<CurrentUser | null>(null); const [checking, setChecking] = useState(true);
   useEffect(() => { api.me().then((value) => setUser(unwrapUser(value))).catch(() => setUser(null)).finally(() => setChecking(false)); }, []);
   async function logout() { try { await api.logout(); } finally { setUser(null); } }
-  if (checking) return <div className="boot"><span className="brand-mark">F</span><p>正在连接工作台…</p></div>;
+  if (checking) return <div className="boot"><span className="brand-mark">R</span><p>正在连接工作台…</p></div>;
   return user ? <Workbench user={user} onLogout={() => void logout()} /> : <Login onLogin={setUser} />;
 }

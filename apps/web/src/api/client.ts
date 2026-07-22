@@ -38,6 +38,7 @@ export const api = {
   requestOtp: (body: OtpRequest) => request<{ challengeId: string; expiresAt?: number; resendAfter?: number }>('/auth/otp/request', { method: 'POST', body: JSON.stringify(body) }),
   verifyOtp: (body: OtpVerify) => request<{ user: CurrentUser } | CurrentUser>('/auth/otp/verify', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request<{ user: CurrentUser } | CurrentUser>('/auth/me'),
+  config: () => request<{ maxFileSizeBytes: number }>('/config'),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   prepare: async (body: PrepareRequest): Promise<PrepareResponse> => {
     const result = await request<PreparedWireResponse>('/uploads/prepare', { method: 'POST', body: JSON.stringify(body) });
