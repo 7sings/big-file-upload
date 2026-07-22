@@ -29,9 +29,12 @@ describe('SMTP configuration',()=>{
     expect(()=>loadConfig()).toThrow('SMTP_ADDRESS_FAMILY must be one of auto, ipv4');
     process.env.SMTP_ADDRESS_FAMILY='auto';
     process.env.SMTP_DNS_TIMEOUT_MS='0';
-    expect(()=>loadConfig()).toThrow('SMTP_DNS_TIMEOUT_MS must be a positive integer');
+    expect(()=>loadConfig()).toThrow('SMTP_DNS_TIMEOUT_MS must be a positive integer no greater than 2147483647');
     process.env.SMTP_DNS_TIMEOUT_MS='3000';
     process.env.SMTP_PORT='65536';
     expect(()=>loadConfig()).toThrow('SMTP_PORT must be between 1 and 65535');
+    process.env.SMTP_PORT='587';
+    process.env.SMTP_SOCKET_TIMEOUT_MS='2147483648';
+    expect(()=>loadConfig()).toThrow('SMTP_SOCKET_TIMEOUT_MS must be a positive integer no greater than 2147483647');
   });
 });

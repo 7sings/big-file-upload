@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns';
 import { connect, type Socket } from 'node:net';
+import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport/index.js';
 import type { FastifyBaseLogger } from 'fastify';
@@ -24,9 +25,10 @@ function timeoutError(stage: string): Error {
   return error;
 }
 
-function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socketOptions: { connection?: Socket }) => void): void {
+function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socketOptions: { connection?: Socket; secured?: boolean }) => void): void {
   let finished = false;
-  let socket: Socket | undefined;
+  let socket: Socket | TLSSocket | undefined;
+  const readyEvent = options.secure ? 'secureConnect' : 'connect';
   let connectionTimer: ReturnType<typeof setTimeout> | undefined;
   let lastError: Error | null = null;
   let onConnect = () => undefined;
@@ -34,7 +36,7 @@ function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socket
 
   const cleanupSocket = () => {
     if (connectionTimer) clearTimeout(connectionTimer);
-    socket?.removeListener('connect', onConnect);
+    socket?.removeListener(readyEvent, onConnect);
     socket?.removeListener('error', onError);
   };
   const finish = (error: Error | null) => {
@@ -43,13 +45,15 @@ function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socket
     clearTimeout(dnsTimer);
     cleanupSocket();
     if (error && socket && !socket.destroyed) socket.destroy();
-    callback(error, socket ? { connection: socket } : {});
+    callback(error, socket ? { connection: socket, secured: options.secure || undefined } : {});
   };
   const connectNext = (addresses: string[], index: number) => {
     if (finished) return;
     if (index >= addresses.length) return finish(lastError ?? new Error(`SMTP host ${options.host} did not resolve to an IPv4 address`));
     try {
-      socket = connect({ host: addresses[index]!, port: options.port, family: 4 });
+      socket = options.secure
+        ? tlsConnect({ host: addresses[index]!, port: options.port, servername: options.host })
+        : connect({ host: addresses[index]!, port: options.port, family: 4 });
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       return connectNext(addresses, index + 1);
@@ -69,7 +73,7 @@ function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socket
       cleanupSocket();
       connectNext(addresses, index + 1);
     };
-    socket.once('connect', onConnect);
+    socket.once(readyEvent, onConnect);
     socket.once('error', onError);
   };
   const dnsTimer = setTimeout(() => finish(timeoutError('DNS lookup')), options.dnsTimeoutMs);
