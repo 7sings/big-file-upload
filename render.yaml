@@ -1,9 +1,4 @@
 services:
-  - type: keyvalue
-    name: big-upload-redis
-    plan: free
-    ipAllowList: []
-
   - type: web
     name: big-file-upload
     runtime: node
@@ -19,11 +14,9 @@ services:
         value: production
       - key: REDIS_DRIVER
         value: redis
+      # 使用已有的 Render Key Value；在 Render Dashboard 手动填写连接地址，勿提交到仓库。
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: big-upload-redis
-          property: connectionString
+        sync: false
       - key: STORAGE_DRIVER
         value: r2
       - key: MAIL_DRIVER
@@ -72,11 +65,9 @@ services:
         value: production
       - key: REDIS_DRIVER
         value: redis
+      # 使用已有的 Render Key Value；在 Render Dashboard 手动填写连接地址，勿提交到仓库。
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: big-upload-redis
-          property: connectionString
+        sync: false
       - key: STORAGE_DRIVER
         value: r2
       - key: DATABASE_URL
