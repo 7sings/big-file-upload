@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     # Render 免费套餐不支持 preDeployCommand；迁移本身幂等，可在构建完成后执行。
-    buildCommand: npm ci && npm run build && npm run migrate
+    buildCommand: npm ci --include=dev && npm run build && npm run migrate
     startCommand: npm start
     healthCheckPath: /health/live
     envVars:
@@ -58,7 +58,7 @@ services:
     name: big-file-upload-cleanup
     runtime: node
     schedule: "17 * * * *"
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run cleanup
     envVars:
       - key: NODE_ENV

@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import SparkMD5 from 'spark-md5';
+import { createMD5 } from 'hash-wasm';
 
 interface Range { offset: number; length: number }
 type HashMessage =
@@ -43,19 +43,19 @@ self.onmessage = async (event: MessageEvent<HashMessage>) => {
       return;
     }
 
-    const spark = new SparkMD5.ArrayBuffer();
+    const md5 = await createMD5();
     const ranges = sampleRanges(message.file.size);
     const results: Array<{ offset: number; length: number; sha256: string }> = [];
     let sampledBytes = 0;
     const total = ranges.reduce((sum, range) => sum + range.length, 0);
     for (const range of ranges) {
       const bytes = await message.file.slice(range.offset, range.offset + range.length).arrayBuffer();
-      spark.append(bytes);
+      md5.update(new Uint8Array(bytes));
       results.push({ ...range, sha256: hex(await crypto.subtle.digest('SHA-256', bytes)) });
       sampledBytes += range.length;
       self.postMessage({ id: message.id, type: 'progress', loaded: sampledBytes, total });
     }
-    self.postMessage({ id: message.id, type: 'done', result: { quickFingerprint: `sample-md5:${spark.end()}:${message.file.size}`, sampledBytes, ranges: results } });
+    self.postMessage({ id: message.id, type: 'done', result: { quickFingerprint: `sample-md5:${md5.digest('hex')}:${message.file.size}`, sampledBytes, ranges: results } });
   } catch (error) {
     self.postMessage({ id: message.id, type: 'error', message: error instanceof Error ? error.message : '文件指纹计算失败' });
   }
