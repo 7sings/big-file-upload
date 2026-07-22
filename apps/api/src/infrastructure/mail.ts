@@ -13,6 +13,10 @@ type SmtpOptions = {
   addressFamily: SmtpAddressFamily; dnsTimeoutMs: number; connectionTimeoutMs: number; greetingTimeoutMs: number; socketTimeoutMs: number;
 };
 
+type ResendOptions = {
+  apiKey: string; apiUrl: string; timeoutMs: number; from: string; logger?: FastifyBaseLogger; fetch?: typeof globalThis.fetch;
+};
+
 function maskEmail(email: string) {
   const [local, domain] = email.split('@');
   if (!local || !domain) return '[invalid-email]';
@@ -87,6 +91,38 @@ function ipv4Socket(options: SmtpOptions, callback: (error: Error | null, socket
 
 export class ConsoleMailer implements Mailer {
   async sendOtp(email:string,code:string,expiresInSeconds:number):Promise<void>{ console.info(`[mail] OTP for ${email}: ${code} (expires in ${expiresInSeconds}s)`); }
+}
+
+export class ResendMailer implements Mailer {
+  private readonly fetch: typeof globalThis.fetch;
+
+  constructor(private readonly options: ResendOptions) {
+    this.fetch=options.fetch??globalThis.fetch;
+    this.logger?.info({event:'mail.resend_configured',apiUrl:options.apiUrl,from:maskEmail(options.from.match(/<([^>]+)>/)?.[1] ?? options.from),timeoutMs:options.timeoutMs},'Resend mailer configured');
+  }
+
+  private get logger():FastifyBaseLogger|undefined{return this.options.logger}
+
+  async sendOtp(email:string,code:string,expiresInSeconds:number):Promise<void>{
+    const recipient=maskEmail(email);const started=Date.now();
+    this.logger?.info({event:'mail.otp_sending',provider:'resend',recipient,expiresInSeconds},'Sending OTP email');
+    try {
+      const response=await this.fetch(`${this.options.apiUrl.replace(/\/$/,'')}/emails`,{
+        method:'POST',
+        headers:{authorization:`Bearer ${this.options.apiKey}`,'content-type':'application/json'},
+        body:JSON.stringify({from:this.options.from,to:[email],subject:'Your Big Upload sign-in code',text:`Your sign-in code is ${code}. It expires in ${Math.ceil(expiresInSeconds/60)} minutes.`}),
+        signal:AbortSignal.timeout(this.options.timeoutMs),
+      });
+      const body=await response.json().catch(()=>null) as {id?:string;message?:string;name?:string}|null;
+      if(!response.ok){const error=new Error(body?.message||`Resend API returned HTTP ${response.status}`) as NodeJS.ErrnoException;error.code=`RESEND_${response.status}`;throw error}
+      if(!body?.id)throw new Error('Resend API response did not include a message id');
+      this.logger?.info({event:'mail.otp_sent',provider:'resend',recipient,messageId:body.id,durationMs:Date.now()-started},'OTP email accepted by Resend');
+    } catch(error) {
+      const err=error instanceof Error ? error as NodeJS.ErrnoException : undefined;
+      this.logger?.error({err:error,event:'mail.otp_failed',provider:'resend',recipient,durationMs:Date.now()-started,errorCode:err?.code},'Resend failed to send OTP email');
+      throw error;
+    }
+  }
 }
 
 export class NodemailerMailer implements Mailer {

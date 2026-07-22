@@ -15,7 +15,7 @@ import type { Readable } from 'node:stream';
 import { loadConfig, type Config } from './config.js';
 import { Database, type FileRow, type UploadRow } from './infrastructure/database.js';
 import { MemoryKvStore, RedisKvStore, type KvStore } from './infrastructure/kv.js';
-import { ConsoleMailer, NodemailerMailer, type Mailer } from './infrastructure/mail.js';
+import { ConsoleMailer, NodemailerMailer, ResendMailer, type Mailer } from './infrastructure/mail.js';
 import { LocalStorageProvider, R2StorageProvider, type LocalStorageAccess, type StorageProvider } from './infrastructure/storage/index.js';
 import { detectContentType, isAllowedContentType } from './content-type.js';
 import { Telemetry } from './infrastructure/telemetry.js';
@@ -54,7 +54,7 @@ export async function buildApp(deps:AppDependencies={}):Promise<BuiltApp>{
   const kv=deps.kv??(config.redisDriver==='redis'?await RedisKvStore.connect(config.redisUrl!):new MemoryKvStore());
   const app=Fastify({logger:{level:config.logLevel},bodyLimit:1024*1024,routerOptions:{maxParamLength:512},trustProxy:config.nodeEnv==='production'}).withTypeProvider<TypeBoxTypeProvider>();
   const telemetry=new Telemetry(app.log);
-  const mailer=deps.mailer??(config.mailDriver==='smtp'?new NodemailerMailer({host:config.smtpHost!,port:config.smtpPort,secure:config.smtpSecure,user:config.smtpUser,pass:config.smtpPass,from:config.mailFrom,addressFamily:config.smtpAddressFamily,dnsTimeoutMs:config.smtpDnsTimeoutMs,connectionTimeoutMs:config.smtpConnectionTimeoutMs,greetingTimeoutMs:config.smtpGreetingTimeoutMs,socketTimeoutMs:config.smtpSocketTimeoutMs,logger:app.log}):new ConsoleMailer());
+  const mailer=deps.mailer??(config.mailDriver==='smtp'?new NodemailerMailer({host:config.smtpHost!,port:config.smtpPort,secure:config.smtpSecure,user:config.smtpUser,pass:config.smtpPass,from:config.mailFrom,addressFamily:config.smtpAddressFamily,dnsTimeoutMs:config.smtpDnsTimeoutMs,connectionTimeoutMs:config.smtpConnectionTimeoutMs,greetingTimeoutMs:config.smtpGreetingTimeoutMs,socketTimeoutMs:config.smtpSocketTimeoutMs,logger:app.log}):config.mailDriver==='resend'?new ResendMailer({apiKey:config.resendApiKey!,apiUrl:config.resendApiUrl,timeoutMs:config.resendTimeoutMs,from:config.mailFrom,logger:app.log}):new ConsoleMailer());
   const storage=deps.storage??(config.storageDriver==='r2'?new R2StorageProvider(config.r2Bucket!,{endpoint:config.r2Endpoint!,region:config.r2Region,accessKeyId:config.r2AccessKeyId!,secretAccessKey:config.r2SecretAccessKey!}):new LocalStorageProvider(config.localStoragePath,config.publicOrigin,config.localSigningSecret));
   await app.register(helmet); await app.register(cookie,{secret:config.cookieSecret}); await app.register(cors,{origin:config.appOrigin,credentials:true,exposedHeaders:['etag','content-length','content-range']});
   let servesWeb=false;const webDist=fileURLToPath(new URL('../../web/dist/',import.meta.url));

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
-const names=['SMTP_ADDRESS_FAMILY','SMTP_DNS_TIMEOUT_MS','SMTP_CONNECTION_TIMEOUT_MS','SMTP_GREETING_TIMEOUT_MS','SMTP_SOCKET_TIMEOUT_MS','SMTP_PORT'] as const;
+const names=['MAIL_DRIVER','RESEND_API_KEY','RESEND_API_URL','RESEND_TIMEOUT_MS','SMTP_ADDRESS_FAMILY','SMTP_DNS_TIMEOUT_MS','SMTP_CONNECTION_TIMEOUT_MS','SMTP_GREETING_TIMEOUT_MS','SMTP_SOCKET_TIMEOUT_MS','SMTP_PORT'] as const;
 const original=Object.fromEntries(names.map(name=>[name,process.env[name]]));
 afterEach(()=>{for(const name of names){const value=original[name];if(value===undefined)delete process.env[name];else process.env[name]=value}});
 
@@ -36,5 +36,20 @@ describe('SMTP configuration',()=>{
     process.env.SMTP_PORT='587';
     process.env.SMTP_SOCKET_TIMEOUT_MS='2147483648';
     expect(()=>loadConfig()).toThrow('SMTP_SOCKET_TIMEOUT_MS must be a positive integer no greater than 2147483647');
+  });
+});
+
+describe('Resend configuration',()=>{
+  it('requires an API key for the Resend driver',()=>{
+    process.env.MAIL_DRIVER='resend';delete process.env.RESEND_API_KEY;
+    expect(()=>loadConfig()).toThrow('RESEND_API_KEY is required for resend driver');
+  });
+
+  it('loads the Resend API settings',()=>{
+    process.env.MAIL_DRIVER='resend';process.env.RESEND_API_KEY='re_test';process.env.RESEND_TIMEOUT_MS='4321';
+    const config=loadConfig();
+    expect(config.resendApiKey).toBe('re_test');
+    expect(config.resendApiUrl).toBe('https://api.resend.com');
+    expect(config.resendTimeoutMs).toBe(4321);
   });
 });

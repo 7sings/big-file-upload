@@ -64,9 +64,9 @@ npm run build
 - Turso：`DATABASE_URL`、`DATABASE_AUTH_TOKEN`
 - Render Key Value：`REDIS_URL`
 - R2：`R2_ENDPOINT`、`R2_BUCKET`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
-- SMTP：`SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS`、`MAIL_FROM`、`SMTP_ADDRESS_FAMILY` 和各项 `SMTP_*_TIMEOUT_MS`
+- 邮件：`MAIL_DRIVER=resend`、`RESEND_API_KEY`、`MAIL_FROM`
 
-Render 使用 QQ SMTP 时保留 `SMTP_HOST=smtp.qq.com` 这样的域名，不要填写某个固定 IP。Render Blueprint 已将 `SMTP_ADDRESS_FAMILY` 设为 `ipv4`，用动态 DNS 的 A 记录避开无 IPv6 出站路由的运行环境；其它双栈环境可使用默认的 `auto`。587 使用 STARTTLS，应配置 `SMTP_SECURE=false`；465 使用直接 TLS，通常配置 `SMTP_SECURE=true`。SMTP 网络异常会在配置的短超时内返回失败，客户端可重试，不会等待 Nodemailer 的分钟级默认超时。
+Render 免费实例会限制常见 SMTP 出站端口，因此生产 Blueprint 默认通过 Resend HTTPS API 发信。`MAIL_FROM` 必须使用 Resend 已验证域名下的发件地址；未验证域名时可按 Resend 控制台的测试规则配置。API Token 只填写到 Render 环境变量，不要提交到仓库。SMTP 驱动仍保留用于允许 SMTP 出站的其它环境。
 
 使用 `render.yaml` 创建 Web Service、Key Value 和每小时清理 Cron。将 `infra/r2-cors.json` 中的域名替换为真实 Render 域名，并在 R2 上配置 1 天后中止未完成 multipart 的生命周期规则。
 
@@ -75,4 +75,4 @@ Render 使用 QQ SMTP 时保留 `SMTP_HOST=smtp.qq.com` 这样的域名，不要
 - 浏览器刷新后通常不能继续访问原始 `File`，因此需要用户重新选择同一文件再恢复。
 - multipart 的恢复粒度是完整 part，不支持 part 内字节续传。
 - 视频/音频是否可播放仍受浏览器 codec 支持影响。
-- 没有真实 R2/Turso/Redis/SMTP 凭据时，只能验证完整本地主流程，不能声称云端合约已经通过。
+- 没有真实 R2/Turso/Redis/Resend 凭据时，只能验证完整本地主流程，不能声称云端合约已经通过。

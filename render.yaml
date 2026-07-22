@@ -20,7 +20,7 @@ services:
       - key: STORAGE_DRIVER
         value: r2
       - key: MAIL_DRIVER
-        value: smtp
+        value: resend
       - key: APP_ORIGIN
         sync: false
       - key: COOKIE_SECRET
@@ -41,27 +41,10 @@ services:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
-      - key: SMTP_HOST
+      - key: RESEND_API_KEY
         sync: false
-      - key: SMTP_PORT
-        value: 587
-      - key: SMTP_SECURE
-        value: false
-      # Render 当前无可用 IPv6 SMTP 出站路由；保持 SMTP_HOST 为域名并仅通过 IPv4 建连。
-      - key: SMTP_ADDRESS_FAMILY
-        value: ipv4
-      - key: SMTP_DNS_TIMEOUT_MS
-        value: 3000
-      - key: SMTP_CONNECTION_TIMEOUT_MS
-        value: 8000
-      - key: SMTP_GREETING_TIMEOUT_MS
-        value: 8000
-      - key: SMTP_SOCKET_TIMEOUT_MS
-        value: 15000
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
+      - key: RESEND_TIMEOUT_MS
+        value: 10000
       - key: MAIL_FROM
         sync: false
 

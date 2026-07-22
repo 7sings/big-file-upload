@@ -1,5 +1,5 @@
 export type RedisDriver = 'memory' | 'redis';
-export type MailDriver = 'console' | 'smtp';
+export type MailDriver = 'console' | 'smtp' | 'resend';
 export type SmtpAddressFamily = 'auto' | 'ipv4';
 const MAX_TIMER_MS = 2_147_483_647;
 export type StorageDriver = 'local' | 'r2';
@@ -47,6 +47,7 @@ export interface Config {
   redisDriver: RedisDriver; redisUrl?: string;
   mailDriver: MailDriver; smtpHost?: string; smtpPort: number; smtpSecure: boolean; smtpUser?: string; smtpPass?: string; mailFrom: string;
   smtpAddressFamily: SmtpAddressFamily; smtpDnsTimeoutMs: number; smtpConnectionTimeoutMs: number; smtpGreetingTimeoutMs: number; smtpSocketTimeoutMs: number;
+  resendApiKey?: string; resendApiUrl: string; resendTimeoutMs: number;
   storageDriver: StorageDriver; localStoragePath: string;
   r2Endpoint?: string; r2Region: string; r2Bucket?: string; r2AccessKeyId?: string; r2SecretAccessKey?: string;
   maxFileSizeBytes: number; maxActiveUploadsPerUser: number; uploadStaleAfterSeconds: number;
@@ -65,12 +66,14 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     localSigningSecret: process.env.LOCAL_SIGNING_SECRET || 'development-local-signing-secret-32chars',
     databaseUrl: process.env.DATABASE_URL || 'file:.data/app.db', databaseAuthToken: process.env.DATABASE_AUTH_TOKEN || undefined,
     redisDriver: choice('REDIS_DRIVER', ['memory', 'redis'] as const, 'memory'), redisUrl: process.env.REDIS_URL || undefined,
-    mailDriver: choice('MAIL_DRIVER', ['console', 'smtp'] as const, 'console'), smtpHost: process.env.SMTP_HOST || undefined,
+    mailDriver: choice('MAIL_DRIVER', ['console', 'smtp', 'resend'] as const, 'console'), smtpHost: process.env.SMTP_HOST || undefined,
     smtpPort: port('SMTP_PORT', 587), smtpSecure: bool('SMTP_SECURE', false), smtpUser: process.env.SMTP_USER || undefined,
     smtpPass: process.env.SMTP_PASS || undefined, mailFrom: process.env.MAIL_FROM || 'Big Upload <no-reply@example.com>',
     smtpAddressFamily: choice('SMTP_ADDRESS_FAMILY', ['auto', 'ipv4'] as const, 'auto'),
     smtpDnsTimeoutMs: positiveInt('SMTP_DNS_TIMEOUT_MS', 3000, MAX_TIMER_MS), smtpConnectionTimeoutMs: positiveInt('SMTP_CONNECTION_TIMEOUT_MS', 8000, MAX_TIMER_MS),
     smtpGreetingTimeoutMs: positiveInt('SMTP_GREETING_TIMEOUT_MS', 8000, MAX_TIMER_MS), smtpSocketTimeoutMs: positiveInt('SMTP_SOCKET_TIMEOUT_MS', 15000, MAX_TIMER_MS),
+    resendApiKey: process.env.RESEND_API_KEY || undefined, resendApiUrl: process.env.RESEND_API_URL || 'https://api.resend.com',
+    resendTimeoutMs: positiveInt('RESEND_TIMEOUT_MS', 10000, MAX_TIMER_MS),
     storageDriver: choice('STORAGE_DRIVER', ['local', 'r2'] as const, 'local'), localStoragePath: process.env.LOCAL_STORAGE_PATH || '.data/storage',
     r2Endpoint: process.env.R2_ENDPOINT || undefined, r2Region: process.env.R2_REGION || 'auto', r2Bucket: process.env.R2_BUCKET || undefined,
     r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || undefined, r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || undefined,
@@ -88,5 +91,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   if (merged.redisDriver === 'redis' && !merged.redisUrl) throw new Error('REDIS_URL is required for redis driver');
   if (merged.storageDriver === 'r2' && (!merged.r2Endpoint || !merged.r2Bucket || !merged.r2AccessKeyId || !merged.r2SecretAccessKey)) throw new Error('R2 configuration is incomplete');
   if (merged.mailDriver === 'smtp' && !merged.smtpHost) throw new Error('SMTP_HOST is required for smtp driver');
+  if (merged.mailDriver === 'resend' && !merged.resendApiKey) throw new Error('RESEND_API_KEY is required for resend driver');
   return merged;
 }
