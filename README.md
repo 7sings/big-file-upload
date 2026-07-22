@@ -68,7 +68,7 @@ npm run build
 
 Render 免费实例会限制常见 SMTP 出站端口，因此生产 Blueprint 默认通过 Resend HTTPS API 发信。`MAIL_FROM` 必须使用 Resend 已验证域名下的发件地址；未验证域名时可按 Resend 控制台的测试规则配置。API Token 只填写到 Render 环境变量，不要提交到仓库。SMTP 驱动仍保留用于允许 SMTP 出站的其它环境。
 
-使用 `render.yaml` 创建 Web Service、Key Value 和每小时清理 Cron。将 `infra/r2-cors.json` 中的域名替换为真实 Render 域名，并在 R2 上配置 1 天后中止未完成 multipart 的生命周期规则。
+使用 `render.yaml` 创建 Web Service、Key Value 和每小时清理 Cron。将 `infra/r2-cors.json` 中的域名替换为真实 Render 域名，并在 R2 上配置 1 天后中止未完成 multipart 的生命周期规则。应用会把 `R2_ENDPOINT` 的源自动加入页面 CSP 的 `connect-src`，因此上传直连 R2 不会被 CSP 拦截；R2 bucket 的 CORS 配置仍必须允许该 Render 域名的 `PUT` 请求。
 
 ## 关键限制
 
