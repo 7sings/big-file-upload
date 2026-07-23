@@ -58,8 +58,14 @@ export async function buildApp(deps:AppDependencies={}):Promise<BuiltApp>{
   const storage=deps.storage??(config.storageDriver==='r2'?new R2StorageProvider(config.r2Bucket!,{endpoint:config.r2Endpoint!,region:config.r2Region,accessKeyId:config.r2AccessKeyId!,secretAccessKey:config.r2SecretAccessKey!}):new LocalStorageProvider(config.localStoragePath,config.publicOrigin,config.localSigningSecret));
   // Multipart data is PUT directly from the browser to the configured R2 endpoint.
   // Keep CSP strict, but allow that exact origin when R2 storage is enabled.
-  const storageConnectSource=config.storageDriver==='r2'?[new URL(config.r2Endpoint!).origin]:[];
-  await app.register(helmet,{contentSecurityPolicy:{directives:{scriptSrc:["'self'","'wasm-unsafe-eval'"],connectSrc:["'self'",...storageConnectSource]}}}); await app.register(cookie,{secret:config.cookieSecret}); await app.register(cors,{origin:config.appOrigin,credentials:true,exposedHeaders:['etag','content-length','content-range']});
+  const storageBrowserSources=config.storageDriver==='r2'?[new URL(config.r2Endpoint!).origin]:[];
+  await app.register(helmet,{contentSecurityPolicy:{directives:{
+    scriptSrc:["'self'","'wasm-unsafe-eval'"],
+    connectSrc:["'self'",...storageBrowserSources],
+    imgSrc:["'self'",'data:',...storageBrowserSources],
+    mediaSrc:["'self'",...storageBrowserSources],
+    frameSrc:["'self'",...storageBrowserSources],
+  }}}); await app.register(cookie,{secret:config.cookieSecret}); await app.register(cors,{origin:config.appOrigin,credentials:true,exposedHeaders:['etag','content-length','content-range']});
   let servesWeb=false;const webDist=fileURLToPath(new URL('../../web/dist/',import.meta.url));
   if(config.nodeEnv==='production'){try{await access(webDist);await app.register(fastifyStatic,{root:webDist,prefix:'/'});servesWeb=true}catch{app.log.warn({webDist},'Web dist directory is unavailable; API-only mode enabled')}}
   app.addContentTypeParser('application/octet-stream',(request,payload,done)=>done(null,payload));

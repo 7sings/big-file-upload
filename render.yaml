@@ -22,7 +22,7 @@ services:
       - key: MAIL_DRIVER
         value: resend
       - key: APP_ORIGIN
-        sync: false
+        value: https://big-file-upload.onrender.com
       - key: COOKIE_SECRET
         generateValue: true
       - key: OTP_PEPPER
