@@ -23,7 +23,7 @@ function formatEta(seconds: number | null) {
   return `${Math.floor(seconds / 3600)} 小时 ${Math.ceil((seconds % 3600) / 60)} 分`;
 }
 function formatDuration(milliseconds?: number) {
-  if (!milliseconds || milliseconds < 0) return '—';
+  if (milliseconds === undefined || milliseconds < 0) return '—';
   const seconds = Math.ceil(milliseconds / 1000);
   return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
@@ -136,6 +136,18 @@ function Login({ onLogin }: { onLogin: (user: CurrentUser) => void }) {
   </main>;
 }
 
+function UploadElapsed({ item }: { item: UploadView }) {
+  const [timestamp, setTimestamp] = useState(() => Date.now());
+  useEffect(() => {
+    if (!item.elapsedStartedAt) return;
+    setTimestamp(Date.now());
+    const timer = window.setInterval(() => setTimestamp(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [item.elapsedStartedAt]);
+  const elapsed = (item.elapsedMs ?? 0) + (item.elapsedStartedAt ? Math.max(0, timestamp - item.elapsedStartedAt) : 0);
+  return <span>总耗时 {formatDuration(elapsed)}</span>;
+}
+
 function UploadRow({ item, manager }: { item: UploadView; manager: UploadManager }) {
   const ratio = item.fileSize ? Math.min(1, item.uploadedBytes / item.fileSize) : 0;
   const resumable = ['PAUSED', 'WAITING_NETWORK', 'FAILED_RETRYABLE'].includes(item.status);
@@ -145,14 +157,14 @@ function UploadRow({ item, manager }: { item: UploadView; manager: UploadManager
     <div className={`file-glyph ${item.fileType.split('/')[0]}`}><span>{item.fileName.split('.').pop()?.slice(0, 4).toUpperCase()}</span></div>
     <div className="upload-main"><div className="row-top"><div><strong title={item.fileName}>{item.fileName}</strong><span>{formatBytes(item.fileSize)} · {statusText[item.status] ?? item.status}{item.needsFile ? ' · 需重新选择原文件' : ''}</span></div><b>{Math.round(ratio * 100)}%</b></div>
       <div className="progress"><i style={{ width: `${ratio * 100}%` }} /></div>
-      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `实时速率 ${formatBytes(item.speed)}/s` : statusText[item.status]}</span>{formatNetworkEstimate() && <span>{formatNetworkEstimate()}</span>}<span>剩余 {formatEta(item.etaSeconds)}</span>{item.partSize && <span>动态分片 当前 {formatBytes(item.partSize)}</span>}<span>{item.uploadedParts.length}/{item.totalParts || '—'} 分片</span>{item.status === 'SUCCEEDED' && <span>总耗时 {formatDuration((item.completedAt ?? Date.now()) - (item.startedAt ?? item.createdAt))}</span>}</div>
+      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `实时速率 ${formatBytes(item.speed)}/s` : statusText[item.status]}</span>{formatNetworkEstimate() && <span>{formatNetworkEstimate()}</span>}<span>剩余 {formatEta(item.etaSeconds)}</span>{item.partSize && <span>固定分片 {formatBytes(item.partSize)}</span>}<span>{item.uploadedParts.length}/{item.totalParts || '—'} 分片</span><UploadElapsed item={item} /></div>
       {item.error && <p className="inline-error">{item.error}</p>}
     </div>
     <div className="row-actions">{pausable && <button onClick={() => manager.pause(item.localId)}>暂停</button>}{resumable && <button onClick={() => manager.resume(item.localId)}>{item.needsFile ? '选择原文件' : '继续'}</button>}{!terminal && <button className="danger-link" onClick={() => void manager.cancel(item.localId)}>取消</button>}{terminal && <button onClick={() => void manager.remove(item.localId)}>移除</button>}</div>
   </article>;
 }
 
-function PreviewModal({ file, onClose }: { file: FileRecord; onClose: () => void }) {
+function PreviewModal({ file, previousFile, nextFile, onClose, onPrevious, onNext }: { file: FileRecord; previousFile?: FileRecord; nextFile?: FileRecord; onClose: () => void; onPrevious?: () => void; onNext?: () => void }) {
   const [url, setUrl] = useState(''); const [text, setText] = useState(''); const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
@@ -171,7 +183,41 @@ function PreviewModal({ file, onClose }: { file: FileRecord; onClose: () => void
     return () => { cancelled = true; };
   }, [file]);
   const mime = file.detectedMime;
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`${file.originalName} 预览`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><div className="preview-modal"><header><div><p className="eyebrow">安全预览</p><h3>{file.originalName}</h3></div><button className="close" onClick={onClose} aria-label="关闭">×</button></header><div className="preview-stage">{error ? <div className="empty-state">{error}</div> : !url && !text ? <div className="loader">加载预览中…</div> : mime.startsWith('image/') ? <img src={url} alt={file.originalName} /> : mime.startsWith('video/') ? <video src={url} controls /> : mime.startsWith('audio/') ? <audio src={url} controls /> : mime === 'application/pdf' ? <iframe src={url} title={file.originalName} sandbox="allow-same-origin" /> : <pre>{text}</pre>}</div></div></div>;
+  const image = mime.startsWith('image/');
+  useEffect(() => {
+    if (!image) return;
+    const adjacent = [previousFile, nextFile].filter((value): value is FileRecord => Boolean(value));
+    if (adjacent.length) void Promise.allSettled(adjacent.map((value) => getPreviewUrl(value.id)));
+  }, [image, nextFile?.id, previousFile?.id]);
+  useEffect(() => {
+    if (!image) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft' && onPrevious) onPrevious();
+      if (event.key === 'ArrowRight' && onNext) onNext();
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [image, onClose, onNext, onPrevious]);
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`${file.originalName} 预览`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><div className="preview-modal"><header><div><p className="eyebrow">安全预览</p><h3>{file.originalName}</h3></div><button className="close" onClick={onClose} aria-label="关闭">×</button></header><div className="preview-stage">{error ? <div className="empty-state">{error}</div> : !url && !text ? <div className="loader">加载预览中…</div> : image ? <img src={url} alt={file.originalName} /> : mime.startsWith('video/') ? <video src={url} controls /> : mime.startsWith('audio/') ? <audio src={url} controls /> : mime === 'application/pdf' ? <iframe src={url} title={file.originalName} /> : <pre>{text}</pre>}{image && <><button className="preview-nav previous" disabled={!onPrevious} onClick={onPrevious} aria-label="上一张"><Icon name="arrow" size={26} /></button><button className="preview-nav next" disabled={!onNext} onClick={onNext} aria-label="下一张"><Icon name="arrow" size={26} /></button></>}</div></div></div>;
+}
+
+function DesktopFileThumbnail({ file }: { file: FileRecord }) {
+  const kind = fileKind(file);
+  const [url, setUrl] = useState('');
+  const target = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (kind !== 'image') return;
+    let active = true;
+    const load = () => void getPreviewUrl(file.id).then((previewUrl) => { if (active) setUrl(previewUrl); }).catch(() => undefined);
+    if (!('IntersectionObserver' in window)) { load(); return () => { active = false; }; }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) { observer.disconnect(); load(); }
+    }, { rootMargin: '280px 0px' });
+    if (target.current) observer.observe(target.current);
+    return () => { active = false; observer.disconnect(); };
+  }, [file.id, kind]);
+  return <div ref={target} className={`file-cover ${kind}`}>{url ? <img src={url} alt="" loading="lazy" decoding="async" /> : <span>{file.originalName.split('.').pop()?.slice(0, 4).toUpperCase()}</span>}</div>;
 }
 
 function FileThumbnail({ file }: { file: FileRecord }) {
@@ -320,6 +366,23 @@ function DeleteSheet({ file, busy, onCancel, onConfirm }: { file: FileRecord; bu
   </div>;
 }
 
+function DesktopDeleteDialog({ file, busy, onCancel, onConfirm }: { file: FileRecord; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [busy, onCancel]);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}>
+    <section className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="desktop-delete-title">
+      <div className="delete-dialog-icon"><Icon name="trash" size={24} /></div>
+      <p className="eyebrow">危险操作</p>
+      <h2 id="desktop-delete-title">删除这个文件？</h2>
+      <p><strong>{file.originalName}</strong> 将从云端永久移除，无法恢复。</p>
+      <div className="delete-dialog-actions"><button disabled={busy} onClick={onCancel}>取消</button><button className="danger-button" disabled={busy} onClick={onConfirm}>{busy ? '正在删除…' : '确认删除'}</button></div>
+    </section>
+  </div>;
+}
+
 const mobileFilters: Array<{ value: 'all' | MobileFileKind; label: string }> = [
   { value: 'all', label: '全部' }, { value: 'video', label: '视频' }, { value: 'image', label: '图片' }, { value: 'audio', label: '音频' }, { value: 'pdf', label: 'PDF' }, { value: 'txt', label: '文档' },
 ];
@@ -371,7 +434,7 @@ function MobileWorkbench({ user, files, notice, onNotice, onRefresh, onLogout, o
 function Workbench({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
   const mobile = useMobileLayout();
   const manager = useMemo(() => new UploadManager(user.id), [user.id]);
-  const [uploads, setUploads] = useState<UploadView[]>([]); const [files, setFiles] = useState<FileRecord[]>([]); const [maxFileSizeBytes, setMaxFileSizeBytes] = useState<number | null>(null); const [dragging, setDragging] = useState(false); const [notice, setNotice] = useState(''); const [preview, setPreview] = useState<FileRecord | null>(null); const input = useRef<HTMLInputElement>(null);
+  const [uploads, setUploads] = useState<UploadView[]>([]); const [files, setFiles] = useState<FileRecord[]>([]); const [maxFileSizeBytes, setMaxFileSizeBytes] = useState<number | null>(null); const [dragging, setDragging] = useState(false); const [notice, setNotice] = useState(''); const [preview, setPreview] = useState<FileRecord | null>(null); const [activeFolder, setActiveFolder] = useState<'all' | MobileFileKind | null>(null); const [deleteTarget, setDeleteTarget] = useState<FileRecord | null>(null); const [deleting, setDeleting] = useState(false); const input = useRef<HTMLInputElement>(null);
   const refreshFiles = async () => { try { setFiles(await api.files()); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) { setFiles([]); onLogout(); return; } if (!(reason instanceof ApiError && reason.status === 404)) setNotice(reason instanceof Error ? reason.message : '文件列表加载失败'); } };
   useEffect(() => { manager.activate(); const unsubscribe = manager.subscribe(setUploads); void manager.restore().catch((reason) => setNotice(reason instanceof Error ? reason.message : '无法恢复本地上传记录')); void refreshFiles(); void api.config().then(({ maxFileSizeBytes: size }) => setMaxFileSizeBytes(size)).catch(() => setNotice('无法读取上传大小配置，将由服务端继续校验')); return () => { unsubscribe(); manager.destroy(); }; }, [manager]);
   const succeededCount = uploads.filter((item) => item.status === 'SUCCEEDED').length;
@@ -386,16 +449,38 @@ function Workbench({ user, onLogout }: { user: CurrentUser; onLogout: () => void
     link.download = file.originalName;
     link.click();
   }
+  async function removeFile() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.deleteFile(deleteTarget.id);
+      previewUrlCache.delete(deleteTarget.id);
+      setFiles((current) => current.filter((file) => file.id !== deleteTarget.id));
+      if (preview?.id === deleteTarget.id) setPreview(null);
+      setDeleteTarget(null);
+      setNotice('文件已删除');
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : '删除失败，请稍后重试');
+    } finally {
+      setDeleting(false);
+    }
+  }
   function onInput(event: ChangeEvent<HTMLInputElement>) { if (event.target.files) void choose(event.target.files); event.target.value = ''; }
   function onDrop(event: DragEvent) { event.preventDefault(); setDragging(false); void choose(event.dataTransfer.files); }
   if (mobile) return <MobileWorkbench user={user} files={files} notice={notice} onNotice={setNotice} onRefresh={refreshFiles} onLogout={onLogout} onFilesChange={setFiles} />;
+  const folderFiles = activeFolder === null ? [] : files.filter((file) => activeFolder === 'all' || fileKind(file) === activeFolder);
+  const previewImages = folderFiles.filter((file) => fileKind(file) === 'image');
+  const previewImageIndex = preview && fileKind(preview) === 'image' ? previewImages.findIndex((file) => file.id === preview.id) : -1;
+  const activeFolderLabel = mobileFilters.find((item) => item.value === activeFolder)?.label ?? '';
   return <div className="app-shell"><header className="topbar"><div className="brand"><span className="brand-mark">R</span><span>Rock File</span></div><nav><a href="#uploads">上传任务</a><a href="#files">文件仓库</a></nav><div className="account"><span>{user.email}</span><button onClick={onLogout}>退出</button></div></header>
     <main className="workspace"><section className="welcome"><div><p className="eyebrow">传输控制台</p><h1>下午好，开始传输。</h1><p>支持单文件最高 {maxFileSizeBytes ? formatBytes(maxFileSizeBytes) : '读取中'}；分片数据从浏览器直达对象存储。</p></div><div className="network"><i className={navigator.onLine ? 'online' : ''} />{navigator.onLine ? '网络已连接' : '当前离线'}</div></section>
       <section className={`drop-zone ${dragging ? 'dragging' : ''}`} onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }} onDrop={onDrop} onClick={() => input.current?.click()}><input ref={input} type="file" multiple accept={ACCEPT_ATTRIBUTE} onChange={onInput} /><div className="upload-symbol">↑</div><h2>拖拽文件到这里</h2><p>或点击选择多个文件 · 图片、音视频、PDF、TXT</p><button className="primary" type="button">选择文件</button></section>
       {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')}>×</button></div>}
       <section id="uploads" className="content-section"><div className="section-head"><div><p className="eyebrow">实时队列</p><h2>上传任务</h2></div><span>{uploads.length} 个任务</span></div><div className="panel">{uploads.length ? uploads.map((item) => <UploadRow key={item.localId} item={item} manager={manager} />) : <div className="empty-state">还没有上传任务，将文件拖到上方开始。</div>}</div></section>
-      <section id="files" className="content-section"><div className="section-head"><div><p className="eyebrow">云端内容</p><h2>服务器文件</h2></div><button onClick={() => void refreshFiles()}>刷新列表</button></div><div className="file-grid">{files.length ? files.map((file) => <article className="file-card" key={file.id}><div className={`file-cover ${file.detectedMime.split('/')[0]}`}><span>{file.originalName.split('.').pop()?.slice(0, 4).toUpperCase()}</span></div><div><strong title={file.originalName}>{file.originalName}</strong><p>{formatBytes(file.byteSize)} · {formatDate(file.createdAt)}</p></div><footer><span className={`status-pill ${file.status.toLowerCase()}`}>{file.status}</span><div><button disabled={file.status !== 'READY'} onClick={() => setPreview(file)}>预览</button><button disabled={file.status !== 'READY'} onClick={() => void download(file)}>下载</button></div></footer></article>) : <div className="empty-state grid-empty">服务器中暂无可用文件。</div>}</div></section>
-    </main>{preview && <PreviewModal file={preview} onClose={() => setPreview(null)} />}</div>;
+      <section id="files" className="content-section"><div className="section-head"><div><p className="eyebrow">云端内容</p><h2>{activeFolder === null ? '文件目录' : activeFolderLabel}</h2></div><div className="file-section-actions">{activeFolder !== null && <button onClick={() => setActiveFolder(null)}>返回目录</button>}<button onClick={() => void refreshFiles()}>刷新列表</button></div></div>
+        {activeFolder === null ? <div className="folder-grid">{mobileFilters.map((folder) => { const count = folder.value === 'all' ? files.length : files.filter((file) => fileKind(file) === folder.value).length; return <button className="folder-card" key={folder.value} onClick={() => setActiveFolder(folder.value)}><span className={`folder-icon ${folder.value}`}><Icon name={folder.value === 'all' ? 'files' : folder.value} size={26} /></span><span><strong>{folder.label}</strong><small>{count} 个文件</small></span><Icon name="arrow" size={18} /></button>; })}</div>
+        : <div className="file-grid">{folderFiles.length ? folderFiles.map((file) => <article className="file-card" key={file.id}><DesktopFileThumbnail file={file} /><div><strong title={file.originalName}>{file.originalName}</strong><p>{formatBytes(file.byteSize)} · {formatDate(file.createdAt)}</p></div><footer><span className={`status-pill ${file.status.toLowerCase()}`}>{file.status}</span><div><button disabled={file.status !== 'READY'} onClick={() => setPreview(file)}>预览</button><button disabled={file.status !== 'READY'} onClick={() => void download(file)}>下载</button><button className="danger-link" onClick={() => setDeleteTarget(file)}>删除</button></div></footer></article>) : <div className="empty-state grid-empty">该目录还没有文件。</div>}</div>}</section>
+    </main>{preview && <PreviewModal file={preview} previousFile={previewImageIndex > 0 ? previewImages[previewImageIndex - 1] : undefined} nextFile={previewImageIndex >= 0 && previewImageIndex < previewImages.length - 1 ? previewImages[previewImageIndex + 1] : undefined} onClose={() => setPreview(null)} onPrevious={previewImageIndex > 0 ? () => setPreview(previewImages[previewImageIndex - 1]!) : undefined} onNext={previewImageIndex >= 0 && previewImageIndex < previewImages.length - 1 ? () => setPreview(previewImages[previewImageIndex + 1]!) : undefined} />}{deleteTarget && <DesktopDeleteDialog file={deleteTarget} busy={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void removeFile()} />}</div>;
 }
 
 export default function App() {

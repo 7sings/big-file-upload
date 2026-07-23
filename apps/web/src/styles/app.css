@@ -483,6 +483,56 @@ button:disabled {
   color: #6e91a3;
   font-size: 11px;
 }
+.file-section-actions {
+  display: flex;
+  gap: 8px;
+}
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+.folder-card {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 15px;
+  padding: 20px;
+  border: 1px solid #275168;
+  background: #0b1828;
+  color: #d8f7ff;
+  text-align: left;
+  box-shadow: inset 0 0 28px #37e9ff05;
+}
+.folder-card:hover {
+  border-color: #4e9ab5;
+  background: #0d1e31;
+  box-shadow: inset 0 0 28px #37e9ff0b, 0 0 18px #37e9ff10;
+  transform: translateY(-2px);
+}
+.folder-card > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.folder-card > svg { margin-left: auto; color: #52798d; }
+.folder-card strong { font-size: 14px; }
+.folder-card small { color: #7191a3; font-size: 10px; }
+.folder-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid #275168;
+  background: #12344a;
+  color: #78d8e9;
+}
+.folder-icon.video { background: #29204d; color: #b9a3ff; }
+.folder-icon.image { background: #113e42; color: #71f8d8; }
+.folder-icon.audio { background: #432a3a; color: #ffaadf; }
+.folder-icon.pdf { background: #3e2b25; color: #ffc99c; }
+.folder-icon.txt { background: #1a3543; color: #98dfff; }
 .panel {
   position: relative;
   border: 1px solid #28546b;
@@ -632,6 +682,11 @@ button:disabled {
   font-size: 13px;
   letter-spacing: 0.12em;
 }
+.file-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .file-card strong {
   display: block;
   overflow: hidden;
@@ -652,6 +707,17 @@ button:disabled {
 .file-card footer div {
   display: flex;
   gap: 5px;
+}
+.file-card .danger-link,
+.danger-button {
+  border-color: #73374c;
+  color: #ff9caf;
+}
+.file-card .danger-link:hover,
+.danger-button:hover {
+  border-color: var(--danger);
+  color: #ffd6df;
+  box-shadow: 0 0 12px #ff627e28;
 }
 .status-pill {
   padding: 4px 7px;
@@ -708,6 +774,52 @@ button:disabled {
   margin: 0;
   font-size: 15px;
 }
+.delete-dialog {
+  width: min(430px, 90vw);
+  padding: 34px;
+  border: 1px solid #814259;
+  clip-path: polygon(0 16px, 16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
+  background: #17101c;
+  box-shadow: 0 0 48px #ff627e22;
+}
+.delete-dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 20px;
+  border: 1px solid #9a4059;
+  background: #3b1325;
+  color: #ff8da3;
+}
+.delete-dialog h2 {
+  margin: 0 0 14px;
+  font-size: 24px;
+  letter-spacing: -0.05em;
+}
+.delete-dialog > p:not(.eyebrow) {
+  margin: 0;
+  color: #a8bac6;
+  font-size: 12px;
+  line-height: 1.8;
+  word-break: break-word;
+}
+.delete-dialog > p strong { color: #e8f8ff; }
+.delete-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 28px;
+}
+.delete-dialog-actions button {
+  border: 1px solid #3a6275;
+  padding: 9px 14px;
+  background: #0c1a2b;
+  color: #c2e7ef;
+  font-size: 12px;
+  font-weight: 600;
+}
+.delete-dialog-actions .danger-button { background: #4b1528; }
 .close {
   width: 34px;
   height: 34px;
@@ -760,6 +872,25 @@ button:disabled {
     13px/1.7 'JetBrains Mono',
     monospace;
 }
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid #4f7f94;
+  background: #0d2337d9;
+  color: #d8f7ff;
+  box-shadow: 0 8px 22px #0008;
+  transform: translateY(-50%);
+}
+.preview-nav:hover:not(:disabled) { border-color: var(--cyan); background: #16425b; }
+.preview-nav:disabled { opacity: .24; }
+.preview-nav.previous { left: 20px; }
+.preview-nav.previous svg { transform: rotate(180deg); }
+.preview-nav.next { right: 20px; }
 .loader {
   color: #7ca6b8;
 }
@@ -780,6 +911,7 @@ button:disabled {
   .file-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+  .folder-grid { grid-template-columns: repeat(2, 1fr); }
   .login-copy h1 {
     font-size: 52px;
   }

@@ -32,49 +32,38 @@
 
 服务端在 `POST /api/uploads/prepare` 创建 multipart 会话时固定分片计划；后续恢复上传仍使用数据库已保存的 `partSize/totalParts`，不会中途改边界。
 
-### 决策优先级
+### 固定大小策略
 
-1. 优先采用前端保存的实际上传速度 `observedUploadBps`；
-2. 否则采用浏览器 Network Information API 的 `downlinkMbps`；
-3. 再否则按网络档位估计速度：`slow-2g=50 KiB/s`、`2g=250 KiB/s`、`3g=1,000 KiB/s`、`4g=8 MiB/s`；
-4. 都不可用时使用默认 16 MiB。
+所有**新建** multipart 会话统一使用 8 MiB 分片，不再根据网络速度改变分片边界。8 MiB 高于 R2 非尾 part 至少 5 MiB 的限制，也可避免大分片在弱网下重传成本过高。
 
-速度对应的目标分片量为约 **8 秒可上传的数据量**。之后向上取到 2 的幂 MiB（8、16、32、64、128…），兼顾对象存储 multipart 数量与慢网络的单片耗时。
+网络自适应改由并发控制完成：初始并发 2；连续快速完成（每片 <1 秒）时升到 4、6；连续出现可重试错误或拥塞时降到 1。已创建会话恢复时始终使用数据库中保存的 `partSize/totalParts`，不能改为新计划。
 
-下面是完整核心代码（[packages/upload-core/src/chunk-planner.ts](packages/upload-core/src/chunk-planner.ts)）：
+核心分片代码（[packages/upload-core/src/chunk-planner.ts](packages/upload-core/src/chunk-planner.ts)）：
 
 ```ts
 const MIB = 1024 * 1024;
-const MIN_PART = 8 * MIB;
-const DEFAULT_PART = 16 * MIB;
-const MAX_SOFT_PART = 128 * MIB;
+export const FIXED_PART_SIZE = 8 * MIB;
+const MAX_MULTIPART_PARTS = 10_000;
 
-export function planChunks(fileSize: number, bytesPerSecond?: number): ChunkPlan {
+export function planChunks(fileSize: number): ChunkPlan {
   if (!Number.isSafeInteger(fileSize) || fileSize <= 0) throw new Error('文件大小无效');
-  const byCount = Math.ceil(fileSize / 10_000);
-  const bySpeed = validSpeed(bytesPerSecond) ? validSpeed(bytesPerSecond)! * 8 : DEFAULT_PART;
-  let partSize = roundUpMiB(Math.max(MIN_PART, byCount, bySpeed));
-  partSize = Math.min(partSize, MAX_SOFT_PART);
-  while (Math.ceil(fileSize / partSize) > 10_000) partSize *= 2;
-  return { partSize, totalParts: Math.ceil(fileSize / partSize) };
+  const totalParts = Math.ceil(fileSize / FIXED_PART_SIZE);
+  if (totalParts > MAX_MULTIPART_PARTS) throw new Error('文件超过固定 8 MiB 分片的 10,000 片上限');
+  return { partSize: FIXED_PART_SIZE, totalParts };
 }
 
 export function deriveChunkPlan(fileSize: number, profile?: NetworkProfile): ChunkPlan {
-  const observed = validSpeed(profile?.observedUploadBps);
-  if (observed) return planChunks(fileSize, observed);
-  const downlink = validSpeed(profile?.downlinkMbps ? profile.downlinkMbps * MIB / 8 : undefined);
-  const tier = profile?.effectiveType && NETWORK_BPS[profile.effectiveType]
-    ? NETWORK_BPS[profile.effectiveType] : undefined;
-  return planChunks(fileSize, downlink ?? tier);
+  void profile;
+  return planChunks(fileSize);
 }
 ```
 
 ### 兜底与边界
 
-- 最小分片为 **8 MiB**；速度不可信或未提供时默认 **16 MiB**。
-- 常规最大值是 **128 MiB**，但它是软上限：为遵守 S3/R2 multipart 的最多 10,000 个 part，`while` 会继续翻倍。因此超大文件可能超过 128 MiB。
-- 单文件大小还受服务端 `MAX_FILE_SIZE_BYTES` 限制，默认 **5 GiB**（`.env.example`）。在默认限制下，128 MiB 已足够，最多约 40 个 part，不会触发软上限例外。
-- 速度值被限制到最大 1 GiB/s，避免异常网络数据产生过大分片。
+- 新会话分片固定为 **8 MiB**；最后一片可以小于 8 MiB。
+- 8 MiB × 10,000 的理论固定计划上限约为 78.125 GiB；超过时直接拒绝，而不是私自改变分片大小。
+- 单文件大小仍受服务端 `MAX_FILE_SIZE_BYTES` 限制，默认 **5 GiB**，故默认部署最多 640 个分片。
+- 已存在会话不受本策略变更影响，续传继续使用会话创建时保存的分片边界。
 - 实际切片范围由 `getPartRange(partNumber, partSize, fileSize)` 计算；最后一片自然小于或等于 `partSize`。
 
 ## 3. 某个切片请求失败时怎么办

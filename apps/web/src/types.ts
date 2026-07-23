@@ -22,6 +22,9 @@ export interface UploadSession {
   lastBytesPerSecond?: number;
   startedAt?: number;
   completedAt?: number;
+  elapsedMs?: number;
+  /** Runtime-only start timestamp for the current active upload interval. */
+  elapsedStartedAt?: number;
   expiresAt?: number;
   remoteOnly?: boolean;
 }
