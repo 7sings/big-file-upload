@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode, TouchEvent } from 'react';
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import { ACCEPT_ATTRIBUTE } from '@big-upload/shared';
 import type { CurrentUser, FileRecord } from '@big-upload/shared';
 import { api, ApiError, unwrapUser } from './api/client';
@@ -164,6 +165,65 @@ function UploadRow({ item, manager }: { item: UploadView; manager: UploadManager
   </article>;
 }
 
+function PdfViewer({ url, fileName }: { url: string; fileName: string }) {
+  const stage = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [documentProxy, setDocumentProxy] = useState<PDFDocumentProxy | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageCount, setPageCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [rendering, setRendering] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
+    setDocumentProxy(null); setPageNumber(1); setPageCount(0); setLoading(true); setError('');
+    void (async () => {
+      try {
+        const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+        if (!active) return;
+        GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+        loadingTask = getDocument({ url, disableAutoFetch: false, disableStream: false });
+        const pdf = await loadingTask.promise;
+        if (!active) { void pdf.destroy(); return; }
+        setDocumentProxy(pdf); setPageCount(pdf.numPages);
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : 'PDF 加载失败');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; void loadingTask?.destroy(); };
+  }, [url]);
+
+  useEffect(() => {
+    if (!documentProxy || !canvas.current || !stage.current) return;
+    let cancelled = false;
+    let renderTask: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | undefined;
+    setRendering(true); setError('');
+    void documentProxy.getPage(pageNumber).then((page) => {
+      if (cancelled || !canvas.current || !stage.current) return;
+      const baseViewport = page.getViewport({ scale: 1 });
+      const scale = Math.max(.7, Math.min(2, (stage.current.clientWidth - 32) / baseViewport.width));
+      const viewport = page.getViewport({ scale });
+      const outputScale = window.devicePixelRatio || 1;
+      const element = canvas.current;
+      element.width = Math.floor(viewport.width * outputScale);
+      element.height = Math.floor(viewport.height * outputScale);
+      element.style.width = `${Math.floor(viewport.width)}px`;
+      element.style.height = `${Math.floor(viewport.height)}px`;
+      renderTask = page.render({ canvas: element, viewport, transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0] });
+      return renderTask.promise;
+    }).catch((reason: unknown) => {
+      if (!cancelled && !(reason instanceof Error && reason.name === 'RenderingCancelledException')) setError(reason instanceof Error ? reason.message : 'PDF 页面渲染失败');
+    }).finally(() => { if (!cancelled) setRendering(false); });
+    return () => { cancelled = true; renderTask?.cancel(); };
+  }, [documentProxy, pageNumber]);
+
+  return <div className="pdf-viewer"><div className="pdf-toolbar"><button disabled={pageNumber <= 1 || rendering} onClick={() => setPageNumber((value) => value - 1)}>上一页</button><span>{pageCount ? `${pageNumber} / ${pageCount}` : '正在读取页数…'}</span><button disabled={!pageCount || pageNumber >= pageCount || rendering} onClick={() => setPageNumber((value) => value + 1)}>下一页</button></div><div ref={stage} className="pdf-stage">{(loading || rendering) && <div className="pdf-loading">{loading ? '正在加载 PDF…' : '正在渲染页面…'}</div>}{error ? <div className="empty-state">PDF 预览失败：{error}</div> : <canvas ref={canvas} aria-label={`${fileName}，第 ${pageNumber} 页`} />}</div></div>;
+}
+
 function PreviewModal({ file, previousFile, nextFile, onClose, onPrevious, onNext }: { file: FileRecord; previousFile?: FileRecord; nextFile?: FileRecord; onClose: () => void; onPrevious?: () => void; onNext?: () => void }) {
   const [url, setUrl] = useState(''); const [text, setText] = useState(''); const [error, setError] = useState('');
   useEffect(() => {
@@ -199,7 +259,7 @@ function PreviewModal({ file, previousFile, nextFile, onClose, onPrevious, onNex
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [image, onClose, onNext, onPrevious]);
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`${file.originalName} 预览`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><div className="preview-modal"><header><div><p className="eyebrow">安全预览</p><h3>{file.originalName}</h3></div><button className="close" onClick={onClose} aria-label="关闭">×</button></header><div className="preview-stage">{error ? <div className="empty-state">{error}</div> : !url && !text ? <div className="loader">加载预览中…</div> : image ? <img src={url} alt={file.originalName} /> : mime.startsWith('video/') ? <video src={url} controls /> : mime.startsWith('audio/') ? <audio src={url} controls /> : mime === 'application/pdf' ? <iframe src={url} title={file.originalName} /> : <pre>{text}</pre>}{image && <><button className="preview-nav previous" disabled={!onPrevious} onClick={onPrevious} aria-label="上一张"><Icon name="arrow" size={26} /></button><button className="preview-nav next" disabled={!onNext} onClick={onNext} aria-label="下一张"><Icon name="arrow" size={26} /></button></>}</div></div></div>;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`${file.originalName} 预览`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><div className="preview-modal"><header><div><p className="eyebrow">安全预览</p><h3>{file.originalName}</h3></div><button className="close" onClick={onClose} aria-label="关闭">×</button></header><div className="preview-stage">{error ? <div className="empty-state">{error}</div> : !url && !text ? <div className="loader">加载预览中…</div> : image ? <img src={url} alt={file.originalName} /> : mime.startsWith('video/') ? <video src={url} controls /> : mime.startsWith('audio/') ? <audio src={url} controls /> : mime === 'application/pdf' ? <PdfViewer url={url} fileName={file.originalName} /> : <pre>{text}</pre>}{image && <><button className="preview-nav previous" disabled={!onPrevious} onClick={onPrevious} aria-label="上一张"><Icon name="arrow" size={26} /></button><button className="preview-nav next" disabled={!onNext} onClick={onNext} aria-label="下一张"><Icon name="arrow" size={26} /></button></>}</div></div></div>;
 }
 
 function DesktopFileThumbnail({ file }: { file: FileRecord }) {
@@ -329,7 +389,7 @@ function MobileDocumentPreview({ file, previousFile, nextFile, onClose, onPrevio
         {previousFile && previousUrl && <div className={`mobile-image-slide previous ${swiping ? 'is-swiping' : ''} ${swipeTransitioning ? 'is-transitioning' : ''}`} style={{ transform: `translate3d(calc(-100% + ${swipeOffset}px), 0, 0)` }}><img src={previousUrl} alt={previousFile.originalName} draggable={false} /></div>}
         <div className={`mobile-image-slide current ${swiping ? 'is-swiping' : ''} ${swipeTransitioning ? 'is-transitioning' : ''}`} style={{ transform: `translate3d(${swipeOffset}px, 0, 0)` }}><img src={displayedUrl} alt={file.originalName} draggable={false} /></div>
         {nextFile && nextUrl && <div className={`mobile-image-slide next ${swiping ? 'is-swiping' : ''} ${swipeTransitioning ? 'is-transitioning' : ''}`} style={{ transform: `translate3d(calc(100% + ${swipeOffset}px), 0, 0)` }}><img src={nextUrl} alt={nextFile.originalName} draggable={false} /></div>}
-      </div> : kind === 'video' ? <video src={displayedUrl} controls autoPlay playsInline /> : <iframe src={displayedUrl} title={file.originalName} />}
+      </div> : kind === 'video' ? <video src={displayedUrl} controls autoPlay playsInline /> : kind === 'pdf' ? <PdfViewer url={displayedUrl} fileName={file.originalName} /> : <iframe src={displayedUrl} title={file.originalName} />}
       {showImageNavigation && <><button className="mobile-preview-nav previous" disabled={!onPrevious || !previousUrl} onClick={onPrevious} aria-label="上一张"><Icon name="arrow" size={24} /></button><button className="mobile-preview-nav next" disabled={!onNext || !nextUrl} onClick={onNext} aria-label="下一张"><Icon name="arrow" size={24} /></button></>}
       {showImageNavigation && <span className="mobile-swipe-hint">左右滑动切换</span>}
     </div>
