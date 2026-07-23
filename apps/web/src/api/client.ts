@@ -57,6 +57,7 @@ export const api = {
   files: async () => { const files: FileRecord[] = []; let before: number | undefined; do { const query = before ? `?limit=100&before=${before}` : '?limit=100'; const result = await request<FileListResponse | FileRecord[]>(`/files${query}`); if (Array.isArray(result)) { files.push(...result); break; } files.push(...result.files); before = result.nextCursor; } while (before); return files; },
   preview: (fileId: string) => request<PreviewTicket>(`/files/${encodeURIComponent(fileId)}/preview`, { method: 'POST' }),
   text: (fileId: string) => request<{ content: string }>(`/files/${encodeURIComponent(fileId)}/text`),
+  deleteFile: (fileId: string) => request<void>(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' }),
   downloadUrl: (fileId: string) => `${API_BASE}/files/${encodeURIComponent(fileId)}/download`,
 };
 
