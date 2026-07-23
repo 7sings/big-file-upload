@@ -249,7 +249,6 @@ function MobileDocumentPreview({ file, previousFile, nextFile, onClose, onPrevio
       start.horizontal = true;
     }
     if (!start.horizontal) return;
-    event.preventDefault();
     const atBoundary = (deltaX > 0 && (!onPrevious || !previousUrl)) || (deltaX < 0 && (!onNext || !nextUrl));
     const nextOffset = atBoundary ? deltaX * .22 : deltaX;
     currentSwipeOffset.current = nextOffset; setSwipeOffset(nextOffset);
