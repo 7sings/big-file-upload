@@ -20,6 +20,8 @@ export interface UploadSession {
   createdAt: number;
   updatedAt: number;
   lastBytesPerSecond?: number;
+  startedAt?: number;
+  completedAt?: number;
   expiresAt?: number;
   remoteOnly?: boolean;
 }

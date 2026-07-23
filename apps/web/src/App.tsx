@@ -22,6 +22,11 @@ function formatEta(seconds: number | null) {
   if (seconds < 3600) return `${Math.ceil(seconds / 60)} 分钟`;
   return `${Math.floor(seconds / 3600)} 小时 ${Math.ceil((seconds % 3600) / 60)} 分`;
 }
+function formatDuration(milliseconds?: number) {
+  if (!milliseconds || milliseconds < 0) return '—';
+  const seconds = Math.ceil(milliseconds / 1000);
+  return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+}
 function formatDate(value: number) {
   const date = new Date(value < 10_000_000_000 ? value * 1000 : value);
   return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
@@ -140,7 +145,7 @@ function UploadRow({ item, manager }: { item: UploadView; manager: UploadManager
     <div className={`file-glyph ${item.fileType.split('/')[0]}`}><span>{item.fileName.split('.').pop()?.slice(0, 4).toUpperCase()}</span></div>
     <div className="upload-main"><div className="row-top"><div><strong title={item.fileName}>{item.fileName}</strong><span>{formatBytes(item.fileSize)} · {statusText[item.status] ?? item.status}{item.needsFile ? ' · 需重新选择原文件' : ''}</span></div><b>{Math.round(ratio * 100)}%</b></div>
       <div className="progress"><i style={{ width: `${ratio * 100}%` }} /></div>
-      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `实时速率 ${formatBytes(item.speed)}/s` : statusText[item.status]}</span>{formatNetworkEstimate() && <span>{formatNetworkEstimate()}</span>}<span>剩余 {formatEta(item.etaSeconds)}</span>{item.partSize && <span>动态分片 {formatBytes(item.partSize)} × {item.totalParts ?? '—'}</span>}<span>{item.uploadedParts.length}/{item.totalParts ?? '—'} 分片</span></div>
+      <div className="upload-meta"><span>{item.status === 'UPLOADING' ? `实时速率 ${formatBytes(item.speed)}/s` : statusText[item.status]}</span>{formatNetworkEstimate() && <span>{formatNetworkEstimate()}</span>}<span>剩余 {formatEta(item.etaSeconds)}</span>{item.partSize && <span>动态分片 当前 {formatBytes(item.partSize)}</span>}<span>{item.uploadedParts.length}/{item.totalParts || '—'} 分片</span>{item.status === 'SUCCEEDED' && <span>总耗时 {formatDuration((item.completedAt ?? Date.now()) - (item.startedAt ?? item.createdAt))}</span>}</div>
       {item.error && <p className="inline-error">{item.error}</p>}
     </div>
     <div className="row-actions">{pausable && <button onClick={() => manager.pause(item.localId)}>暂停</button>}{resumable && <button onClick={() => manager.resume(item.localId)}>{item.needsFile ? '选择原文件' : '继续'}</button>}{!terminal && <button className="danger-link" onClick={() => void manager.cancel(item.localId)}>取消</button>}{terminal && <button onClick={() => void manager.remove(item.localId)}>移除</button>}</div>

@@ -5,18 +5,19 @@ export interface NetworkProfile {
 }
 
 const MIB = 1024 * 1024;
-const MIN_PART = 8 * MIB;
-const DEFAULT_PART = 16 * MIB;
-const MAX_SOFT_PART = 128 * MIB;
-const NETWORK_BPS: Record<NonNullable<NetworkProfile['effectiveType']>, number> = {
-  'slow-2g': 50 * 1024,
-  '2g': 250 * 1024,
-  '3g': 1_000 * 1024,
-  '4g': 8 * MIB,
-  unknown: 0,
-};
-
+export const INITIAL_PART_SIZE = 5 * MIB;
+export const MIN_ADAPTIVE_PART_SIZE = 1 * MIB;
+export const MAX_ADAPTIVE_PART_SIZE = 16 * MIB;
 export interface ChunkPlan { partSize: number; totalParts: number }
+
+/** Select the next part from a real upload sample.  One sample is deliberately
+ * used at a time so concurrent requests cannot hide a congested connection. */
+export function nextAdaptivePartSize(currentSize: number, elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return currentSize;
+  if (elapsedMs < 1_000) return Math.min(MAX_ADAPTIVE_PART_SIZE, currentSize * 2);
+  if (elapsedMs > 5_000) return Math.max(MIN_ADAPTIVE_PART_SIZE, Math.floor(currentSize / 2));
+  return currentSize;
+}
 
 function roundUpMiB(value: number): number {
   const mib = Math.ceil(value / MIB);
@@ -30,20 +31,19 @@ function validSpeed(value: unknown): number | undefined {
 export function planChunks(fileSize: number, bytesPerSecond?: number): ChunkPlan {
   if (!Number.isSafeInteger(fileSize) || fileSize <= 0) throw new Error('文件大小无效');
   const byCount = Math.ceil(fileSize / 10_000);
-  const bySpeed = validSpeed(bytesPerSecond) ? validSpeed(bytesPerSecond)! * 8 : DEFAULT_PART;
-  let partSize = roundUpMiB(Math.max(MIN_PART, byCount, bySpeed));
-  partSize = Math.min(partSize, MAX_SOFT_PART);
+  const bySpeed = validSpeed(bytesPerSecond) ? validSpeed(bytesPerSecond)! * 8 : INITIAL_PART_SIZE;
+  let partSize = roundUpMiB(Math.max(INITIAL_PART_SIZE, byCount, bySpeed));
+  partSize = Math.min(partSize, MAX_ADAPTIVE_PART_SIZE);
   while (Math.ceil(fileSize / partSize) > 10_000) partSize *= 2;
   return { partSize, totalParts: Math.ceil(fileSize / partSize) };
 }
 
 /** 在创建 multipart 会话前，根据真实上传样本优先、网络档位兜底的策略确定固定分片边界。 */
 export function deriveChunkPlan(fileSize: number, profile?: NetworkProfile): ChunkPlan {
-  const observed = validSpeed(profile?.observedUploadBps);
-  if (observed) return planChunks(fileSize, observed);
-  const downlink = validSpeed(profile?.downlinkMbps ? profile.downlinkMbps * MIB / 8 : undefined);
-  const tier = profile?.effectiveType && NETWORK_BPS[profile.effectiveType] ? NETWORK_BPS[profile.effectiveType] : undefined;
-  return planChunks(fileSize, downlink ?? tier);
+  // Browser Network Information exposes download, not upload, throughput.
+  // Always begin with a neutral 5 MiB probe and adapt from its actual duration.
+  void profile;
+  return { partSize: Math.min(INITIAL_PART_SIZE, fileSize), totalParts: 0 };
 }
 
 export function getPartRange(partNumber: number, partSize: number, fileSize: number) {

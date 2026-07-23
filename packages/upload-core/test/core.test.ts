@@ -6,12 +6,11 @@ describe('上传核心逻辑', () => {
     const plan = planChunks(2 * 1024 ** 4);
     expect(plan.totalParts).toBeLessThanOrEqual(10_000);
   });
-  it('优先使用实测上传速度，并对异常画像安全回退', () => {
-    const slow = deriveChunkPlan(1024 * 1024 * 1024, { effectiveType: 'slow-2g' });
-    const fast = deriveChunkPlan(1024 * 1024 * 1024, { observedUploadBps: 32 * 1024 * 1024 });
-    const invalid = deriveChunkPlan(1024 * 1024 * 1024, { observedUploadBps: Number.NaN });
-    expect(fast.partSize).toBeGreaterThan(slow.partSize);
-    expect(invalid.totalParts).toBeLessThanOrEqual(10_000);
+  it('首片固定为 5MiB，后续按真实耗时自适应', async () => {
+    const { INITIAL_PART_SIZE, nextAdaptivePartSize } = await import('../src/index.js');
+    expect(deriveChunkPlan(1024 * 1024 * 1024).partSize).toBe(INITIAL_PART_SIZE);
+    expect(nextAdaptivePartSize(INITIAL_PART_SIZE, 800)).toBe(10 * 1024 * 1024);
+    expect(nextAdaptivePartSize(INITIAL_PART_SIZE, 6_000)).toBe(2.5 * 1024 * 1024);
   });
   it('拥塞时并发减半，稳定时逐步增加', () => {
     const adaptive = new AdaptiveConcurrency(1, 6, 4);
