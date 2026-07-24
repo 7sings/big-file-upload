@@ -57,6 +57,14 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # cleanup CLI 也会加载完整应用配置；这三个值即使不参与清理逻辑，
+      # 也必须满足生产环境的安全校验。
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: OTP_PEPPER
+        generateValue: true
+      - key: LOCAL_SIGNING_SECRET
+        generateValue: true
       - key: REDIS_DRIVER
         value: redis
       # 使用已有的 Render Key Value；在 Render Dashboard 手动填写连接地址，勿提交到仓库。
