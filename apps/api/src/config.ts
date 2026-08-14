@@ -1,96 +1,122 @@
-export type RedisDriver = 'memory' | 'redis';
-export type MailDriver = 'console' | 'smtp' | 'resend';
-export type SmtpAddressFamily = 'auto' | 'ipv4';
-const MAX_TIMER_MS = 2_147_483_647;
+export type MailDriver = 'console' | 'resend';
 export type StorageDriver = 'local' | 'r2';
+export type ConfigSource = Record<string, string | undefined>;
 
-function int(name: string, fallback: number): number {
-  const value = process.env[name];
+const MAX_TIMER_MS = 2_147_483_647;
+
+export interface Config {
+  nodeEnv: 'development' | 'test' | 'production';
+  cookieSecret: string;
+  otpPepper: string;
+  localSigningSecret: string;
+  databaseUrl: string;
+  databaseAuthToken?: string;
+  mailDriver: MailDriver;
+  mailFrom: string;
+  resendApiKey?: string;
+  resendApiUrl: string;
+  resendTimeoutMs: number;
+  storageDriver: StorageDriver;
+  localStoragePath: string;
+  publicOrigin: string;
+  r2Endpoint?: string;
+  r2Region: string;
+  r2Bucket?: string;
+  r2AccessKeyId?: string;
+  r2SecretAccessKey?: string;
+  maxFileSizeBytes: number;
+  maxActiveUploadsPerUser: number;
+  uploadStaleAfterSeconds: number;
+  partUrlTtlSeconds: number;
+  previewUrlTtlSeconds: number;
+  otpTtlSeconds: number;
+  sessionTtlSeconds: number;
+  logLevel: string;
+}
+
+function positiveInt(
+  source: ConfigSource,
+  name: string,
+  fallback: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number {
+  const value = source[name];
   if (!value) return fallback;
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer`);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > maximum) {
+    throw new Error(`${name} must be a positive integer no greater than ${maximum}`);
+  }
   return parsed;
 }
 
-function positiveInt(name: string, fallback: number, maximum = Number.MAX_SAFE_INTEGER): number {
-  const value = process.env[name];
-  if (!value) return fallback;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > maximum) throw new Error(`${name} must be a positive integer no greater than ${maximum}`);
-  return parsed;
-}
-
-function port(name: string, fallback: number): number {
-  const value = positiveInt(name, fallback);
-  if (value > 65535) throw new Error(`${name} must be between 1 and 65535`);
-  return value;
-}
-
-function bool(name: string, fallback: boolean): boolean {
-  const value = process.env[name];
-  if (!value) return fallback;
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  throw new Error(`${name} must be true or false`);
-}
-
-function choice<T extends string>(name: string, values: readonly T[], fallback: T): T {
-  const value = (process.env[name] || fallback) as T;
+function choice<T extends string>(
+  source: ConfigSource,
+  name: string,
+  values: readonly T[],
+  fallback: T,
+): T {
+  const value = (source[name] || fallback) as T;
   if (!values.includes(value)) throw new Error(`${name} must be one of ${values.join(', ')}`);
   return value;
 }
 
-export interface Config {
-  nodeEnv: string; port: number; host: string; appOrigin: string; publicOrigin: string;
-  cookieSecret: string; otpPepper: string; localSigningSecret: string;
-  databaseUrl: string; databaseAuthToken?: string;
-  redisDriver: RedisDriver; redisUrl?: string;
-  mailDriver: MailDriver; smtpHost?: string; smtpPort: number; smtpSecure: boolean; smtpUser?: string; smtpPass?: string; mailFrom: string;
-  smtpAddressFamily: SmtpAddressFamily; smtpDnsTimeoutMs: number; smtpConnectionTimeoutMs: number; smtpGreetingTimeoutMs: number; smtpSocketTimeoutMs: number;
-  resendApiKey?: string; resendApiUrl: string; resendTimeoutMs: number;
-  storageDriver: StorageDriver; localStoragePath: string;
-  r2Endpoint?: string; r2Region: string; r2Bucket?: string; r2AccessKeyId?: string; r2SecretAccessKey?: string;
-  maxFileSizeBytes: number; maxActiveUploadsPerUser: number; uploadStaleAfterSeconds: number;
-  partUrlTtlSeconds: number; previewUrlTtlSeconds: number; otpTtlSeconds: number; sessionTtlSeconds: number; logLevel: string;
-}
-
-export function loadConfig(overrides: Partial<Config> = {}): Config {
-  const nodeEnv = process.env.NODE_ENV || 'development';
+export function loadConfig(
+  overrides: Partial<Config> = {},
+  source: ConfigSource = process.env,
+): Config {
+  const nodeEnv = choice(
+    source,
+    'NODE_ENV',
+    ['development', 'test', 'production'] as const,
+    'development',
+  );
   const config: Config = {
     nodeEnv,
-    port: int('PORT', 3000), host: process.env.HOST || '0.0.0.0',
-    appOrigin: process.env.APP_ORIGIN || 'http://localhost:5173',
-    publicOrigin: process.env.PUBLIC_ORIGIN || `http://localhost:${int('PORT', 3000)}`,
-    cookieSecret: process.env.COOKIE_SECRET || 'development-cookie-secret-at-least-32-chars',
-    otpPepper: process.env.OTP_PEPPER || 'development-otp-pepper-at-least-32-chars',
-    localSigningSecret: process.env.LOCAL_SIGNING_SECRET || 'development-local-signing-secret-32chars',
-    databaseUrl: process.env.DATABASE_URL || 'file:.data/app.db', databaseAuthToken: process.env.DATABASE_AUTH_TOKEN || undefined,
-    redisDriver: choice('REDIS_DRIVER', ['memory', 'redis'] as const, 'memory'), redisUrl: process.env.REDIS_URL || undefined,
-    mailDriver: choice('MAIL_DRIVER', ['console', 'smtp', 'resend'] as const, 'console'), smtpHost: process.env.SMTP_HOST || undefined,
-    smtpPort: port('SMTP_PORT', 587), smtpSecure: bool('SMTP_SECURE', false), smtpUser: process.env.SMTP_USER || undefined,
-    smtpPass: process.env.SMTP_PASS || undefined, mailFrom: process.env.MAIL_FROM || 'Big Upload <no-reply@example.com>',
-    smtpAddressFamily: choice('SMTP_ADDRESS_FAMILY', ['auto', 'ipv4'] as const, 'auto'),
-    smtpDnsTimeoutMs: positiveInt('SMTP_DNS_TIMEOUT_MS', 3000, MAX_TIMER_MS), smtpConnectionTimeoutMs: positiveInt('SMTP_CONNECTION_TIMEOUT_MS', 8000, MAX_TIMER_MS),
-    smtpGreetingTimeoutMs: positiveInt('SMTP_GREETING_TIMEOUT_MS', 8000, MAX_TIMER_MS), smtpSocketTimeoutMs: positiveInt('SMTP_SOCKET_TIMEOUT_MS', 15000, MAX_TIMER_MS),
-    resendApiKey: process.env.RESEND_API_KEY || undefined, resendApiUrl: process.env.RESEND_API_URL || 'https://api.resend.com',
-    resendTimeoutMs: positiveInt('RESEND_TIMEOUT_MS', 10000, MAX_TIMER_MS),
-    storageDriver: choice('STORAGE_DRIVER', ['local', 'r2'] as const, 'local'), localStoragePath: process.env.LOCAL_STORAGE_PATH || '.data/storage',
-    r2Endpoint: process.env.R2_ENDPOINT || undefined, r2Region: process.env.R2_REGION || 'auto', r2Bucket: process.env.R2_BUCKET || undefined,
-    r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || undefined, r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || undefined,
-    maxFileSizeBytes: int('MAX_FILE_SIZE_BYTES', 5368709120), maxActiveUploadsPerUser: int('MAX_ACTIVE_UPLOADS_PER_USER', 5),
-    uploadStaleAfterSeconds: int('UPLOAD_STALE_AFTER_SECONDS', 86400), partUrlTtlSeconds: int('PART_URL_TTL_SECONDS', 900),
-    previewUrlTtlSeconds: int('PREVIEW_URL_TTL_SECONDS', 300), otpTtlSeconds: int('OTP_TTL_SECONDS', 600),
-    sessionTtlSeconds: int('SESSION_TTL_SECONDS', 604800), logLevel: process.env.LOG_LEVEL || 'info',
+    cookieSecret: source.COOKIE_SECRET || 'development-cookie-secret-at-least-32-chars',
+    otpPepper: source.OTP_PEPPER || 'development-otp-pepper-at-least-32-chars',
+    localSigningSecret: source.LOCAL_SIGNING_SECRET || 'development-local-signing-secret-32chars',
+    databaseUrl: source.DATABASE_URL || 'file:.data/app.db',
+    databaseAuthToken: source.DATABASE_AUTH_TOKEN || undefined,
+    mailDriver: choice(source, 'MAIL_DRIVER', ['console', 'resend'] as const, 'console'),
+    mailFrom: source.MAIL_FROM || 'Big Upload <no-reply@example.com>',
+    resendApiKey: source.RESEND_API_KEY || undefined,
+    resendApiUrl: source.RESEND_API_URL || 'https://api.resend.com',
+    resendTimeoutMs: positiveInt(source, 'RESEND_TIMEOUT_MS', 10_000, MAX_TIMER_MS),
+    storageDriver: choice(source, 'STORAGE_DRIVER', ['local', 'r2'] as const, 'local'),
+    localStoragePath: source.LOCAL_STORAGE_PATH || '.data/storage',
+    publicOrigin: source.PUBLIC_ORIGIN || 'http://localhost:8787',
+    r2Endpoint: source.R2_ENDPOINT || undefined,
+    r2Region: source.R2_REGION || 'auto',
+    r2Bucket: source.R2_BUCKET || undefined,
+    r2AccessKeyId: source.R2_ACCESS_KEY_ID || undefined,
+    r2SecretAccessKey: source.R2_SECRET_ACCESS_KEY || undefined,
+    maxFileSizeBytes: positiveInt(source, 'MAX_FILE_SIZE_BYTES', 5_368_709_120),
+    maxActiveUploadsPerUser: positiveInt(source, 'MAX_ACTIVE_UPLOADS_PER_USER', 5),
+    uploadStaleAfterSeconds: positiveInt(source, 'UPLOAD_STALE_AFTER_SECONDS', 86_400),
+    partUrlTtlSeconds: positiveInt(source, 'PART_URL_TTL_SECONDS', 900),
+    previewUrlTtlSeconds: positiveInt(source, 'PREVIEW_URL_TTL_SECONDS', 300),
+    otpTtlSeconds: positiveInt(source, 'OTP_TTL_SECONDS', 600),
+    sessionTtlSeconds: positiveInt(source, 'SESSION_TTL_SECONDS', 604_800),
+    logLevel: source.LOG_LEVEL || 'info',
   };
   const merged = { ...config, ...overrides };
   if (merged.nodeEnv === 'production') {
-    for (const [name, value] of [['COOKIE_SECRET', merged.cookieSecret], ['OTP_PEPPER', merged.otpPepper], ['LOCAL_SIGNING_SECRET', merged.localSigningSecret]] as const) {
-      if (value.length < 32 || value.startsWith('development-')) throw new Error(`${name} must be a secure value in production`);
+    for (const [name, value] of [
+      ['COOKIE_SECRET', merged.cookieSecret],
+      ['OTP_PEPPER', merged.otpPepper],
+    ] as const) {
+      if (value.length < 32 || value.startsWith('development-'))
+        throw new Error(`${name} must be a secure value in production`);
     }
   }
-  if (merged.redisDriver === 'redis' && !merged.redisUrl) throw new Error('REDIS_URL is required for redis driver');
-  if (merged.storageDriver === 'r2' && (!merged.r2Endpoint || !merged.r2Bucket || !merged.r2AccessKeyId || !merged.r2SecretAccessKey)) throw new Error('R2 configuration is incomplete');
-  if (merged.mailDriver === 'smtp' && !merged.smtpHost) throw new Error('SMTP_HOST is required for smtp driver');
-  if (merged.mailDriver === 'resend' && !merged.resendApiKey) throw new Error('RESEND_API_KEY is required for resend driver');
+  if (
+    merged.storageDriver === 'r2' &&
+    (!merged.r2Endpoint || !merged.r2Bucket || !merged.r2AccessKeyId || !merged.r2SecretAccessKey)
+  ) {
+    throw new Error('R2 configuration is incomplete');
+  }
+  if (merged.mailDriver === 'resend' && (!merged.resendApiKey || !merged.mailFrom)) {
+    throw new Error('RESEND_API_KEY and MAIL_FROM are required for resend driver');
+  }
   return merged;
 }

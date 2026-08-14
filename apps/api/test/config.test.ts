@@ -1,55 +1,45 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
-const names=['MAIL_DRIVER','RESEND_API_KEY','RESEND_API_URL','RESEND_TIMEOUT_MS','SMTP_ADDRESS_FAMILY','SMTP_DNS_TIMEOUT_MS','SMTP_CONNECTION_TIMEOUT_MS','SMTP_GREETING_TIMEOUT_MS','SMTP_SOCKET_TIMEOUT_MS','SMTP_PORT'] as const;
-const original=Object.fromEntries(names.map(name=>[name,process.env[name]]));
-afterEach(()=>{for(const name of names){const value=original[name];if(value===undefined)delete process.env[name];else process.env[name]=value}});
-
-describe('SMTP configuration',()=>{
-  it('uses bounded dual-stack defaults',()=>{
-    for(const name of names)delete process.env[name];
-    const config=loadConfig();
-    expect(config.smtpAddressFamily).toBe('auto');
-    expect(config.smtpDnsTimeoutMs).toBe(3000);
-    expect(config.smtpConnectionTimeoutMs).toBe(8000);
-    expect(config.smtpGreetingTimeoutMs).toBe(8000);
-    expect(config.smtpSocketTimeoutMs).toBe(15000);
+describe('Worker configuration', () => {
+  it('loads local defaults without cloud credentials', () => {
+    const config = loadConfig({}, {});
+    expect(config.nodeEnv).toBe('development');
+    expect(config.mailDriver).toBe('console');
+    expect(config.storageDriver).toBe('local');
   });
 
-  it('accepts an IPv4-only SMTP deployment policy',()=>{
-    process.env.SMTP_ADDRESS_FAMILY='ipv4';
-    process.env.SMTP_CONNECTION_TIMEOUT_MS='1234';
-    const config=loadConfig();
-    expect(config.smtpAddressFamily).toBe('ipv4');
-    expect(config.smtpConnectionTimeoutMs).toBe(1234);
+  it('requires Resend and R2 credentials in production mode', () => {
+    const source = {
+      NODE_ENV: 'production',
+      MAIL_DRIVER: 'resend',
+      STORAGE_DRIVER: 'r2',
+      COOKIE_SECRET: 'x'.repeat(32),
+      OTP_PEPPER: 'y'.repeat(32),
+    };
+    expect(() => loadConfig({}, source)).toThrow('R2 configuration is incomplete');
   });
 
-  it('rejects unsupported address families and non-positive timeouts',()=>{
-    process.env.SMTP_ADDRESS_FAMILY='ipv6';
-    expect(()=>loadConfig()).toThrow('SMTP_ADDRESS_FAMILY must be one of auto, ipv4');
-    process.env.SMTP_ADDRESS_FAMILY='auto';
-    process.env.SMTP_DNS_TIMEOUT_MS='0';
-    expect(()=>loadConfig()).toThrow('SMTP_DNS_TIMEOUT_MS must be a positive integer no greater than 2147483647');
-    process.env.SMTP_DNS_TIMEOUT_MS='3000';
-    process.env.SMTP_PORT='65536';
-    expect(()=>loadConfig()).toThrow('SMTP_PORT must be between 1 and 65535');
-    process.env.SMTP_PORT='587';
-    process.env.SMTP_SOCKET_TIMEOUT_MS='2147483648';
-    expect(()=>loadConfig()).toThrow('SMTP_SOCKET_TIMEOUT_MS must be a positive integer no greater than 2147483647');
-  });
-});
-
-describe('Resend configuration',()=>{
-  it('requires an API key for the Resend driver',()=>{
-    process.env.MAIL_DRIVER='resend';delete process.env.RESEND_API_KEY;
-    expect(()=>loadConfig()).toThrow('RESEND_API_KEY is required for resend driver');
-  });
-
-  it('loads the Resend API settings',()=>{
-    process.env.MAIL_DRIVER='resend';process.env.RESEND_API_KEY='re_test';process.env.RESEND_TIMEOUT_MS='4321';
-    const config=loadConfig();
-    expect(config.resendApiKey).toBe('re_test');
-    expect(config.resendApiUrl).toBe('https://api.resend.com');
-    expect(config.resendTimeoutMs).toBe(4321);
+  it('loads Worker string bindings and validates positive integers', () => {
+    const source = {
+      NODE_ENV: 'production',
+      MAIL_DRIVER: 'resend',
+      STORAGE_DRIVER: 'r2',
+      COOKIE_SECRET: 'x'.repeat(32),
+      OTP_PEPPER: 'y'.repeat(32),
+      DATABASE_URL: 'libsql://example.turso.io',
+      DATABASE_AUTH_TOKEN: 'token',
+      RESEND_API_KEY: 're_test',
+      MAIL_FROM: 'Big Upload <login@example.com>',
+      R2_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+      R2_BUCKET: 'uploads',
+      R2_ACCESS_KEY_ID: 'key',
+      R2_SECRET_ACCESS_KEY: 'secret',
+      MAX_ACTIVE_UPLOADS_PER_USER: '7',
+    };
+    expect(loadConfig({}, source).maxActiveUploadsPerUser).toBe(7);
+    expect(() => loadConfig({}, { ...source, OTP_TTL_SECONDS: '0' })).toThrow(
+      'OTP_TTL_SECONDS must be a positive integer',
+    );
   });
 });

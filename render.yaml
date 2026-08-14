@@ -1,3 +1,4 @@
+# Cloudflare 迁移后仅作为 Render 回滚配置保留；正式部署入口见 wrangler.jsonc。
 services:
   - type: web
     name: big-file-upload

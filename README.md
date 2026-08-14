@@ -1,78 +1,86 @@
 # Big File Upload
 
-一个面向 PC 的大文件分片上传应用。前端使用 React + Vite，后端使用 Fastify。生产环境由浏览器通过预签名 URL 直接上传到 Cloudflare R2；本地开发使用文件系统模拟 multipart，因此不需要任何云服务账号。
+面向 PC 的大文件分片上传应用。生产运行时已从 Render/Fastify 迁移到 Cloudflare Workers：Hono 提供控制 API，Workers Static Assets 同源托管 React 前端，Durable Objects 保存会话/OTP/频控临时状态，Cron Trigger 每小时清理过期 multipart。
 
-## 功能
+Turso 数据库和 Cloudflare R2 桶原位保留。上传分片仍由浏览器通过 S3 预签名 URL 直传 R2，文件字节不经过 Worker。
 
-- 邮箱验证码登录，包含 TTL、发送冷却、IP/邮箱频控和一次性消费
-- PC 拖拽或点击选择多个文件
-- Web Worker 抽样 MD5，避免阻塞主线程
-- 动态分片规划和 AIMD 并发调节
-- XHR 实时字节进度、速度、ETA、暂停、继续、取消和重试
-- IndexedDB 与服务端活跃会话共同保存恢复信息；刷新、清除本地数据或换浏览器后重新选择原文件即可续传
-- 同一用户内秒传候选匹配
-- 图片、视频、音频、PDF、TXT 内容检测和安全预览
-- R2 multipart、Turso、Redis、Nodemailer 生产适配器
-- 24 小时孤儿 multipart 清理和 Render Cron
-- Pino JSON 日志与健康检查
+## 架构
 
-## 本地启动
+```text
+浏览器 ── /api/* ──> Cloudflare Worker (Hono) ──> Turso
+   │                         │
+   │                         ├── Durable Objects（会话/OTP/频控）
+   │                         └── Resend
+   └── 预签名分片 PUT ─────────────> 原 Cloudflare R2 桶
 
-```bash
-cp .env.example .env
-npm install
-npm run migrate
-npm run dev
+React 静态资源 ──> Workers Static Assets
+每小时清理 ──────> Worker Cron Trigger
 ```
 
-打开 `http://localhost:5173`。开发模式使用 `MAIL_DRIVER=console`，验证码会输出到 API 终端。数据写入 `.data/`。
+## 本地验证
 
-也可以先执行：
+要求 Node.js 22+。
 
 ```bash
+npm install
 npm run typecheck
 npm test
 npm run build
 ```
 
-## 架构
+启动完整 Worker 预览前，复制 `.dev.vars.example` 为 `.dev.vars` 并填写现有 Turso、R2、Resend 凭据：
 
-```text
-浏览器 ── 控制 API ──> Fastify ──> Redis / Turso
-   │                       │
-   └── 预签名分片 PUT ─────┴────> Cloudflare R2
+```bash
+cp .dev.vars.example .dev.vars
+npm run dev
 ```
 
-生产上传字节不经过 Node，避免 Render 服务成为带宽和内存瓶颈。Node 负责认证、创建 multipart、签名、状态机、合并、Range 内容检测和预览授权。
+Wrangler 默认在 `http://localhost:8787` 提供 API 和前端。若只运行 Vite，开发代理也默认指向该端口。
 
-本地 `LocalStorageProvider` 通过受 HMAC 保护的临时 URL 接收分片，并以流式方式合并文件，用同一套上传协议覆盖主流程。
+## Cloudflare 配置
 
-## 文件类型与安全边界
+非敏感变量、Static Assets、Durable Object migration 和 Cron 已写入 `wrangler.jsonc`。首次部署前交互式写入 secrets：
 
-允许 JPEG、PNG、GIF、WebP、MP4、WebM、MP3、WAV、OGG、FLAC、M4A、PDF 和纯文本。SVG、HTML/XML、归档、可执行文件及无法识别的内容默认拒绝。
+```bash
+npx wrangler secret put COOKIE_SECRET
+npx wrangler secret put OTP_PEPPER
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put DATABASE_AUTH_TOKEN
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put MAIL_FROM
+npx wrangler secret put R2_ENDPOINT
+npx wrangler secret put R2_BUCKET
+npx wrangler secret put R2_ACCESS_KEY_ID
+npx wrangler secret put R2_SECRET_ACCESS_KEY
+```
 
-服务端以内容签名为最终裁决，不信任扩展名和浏览器声明的 MIME。TXT 没有可靠 magic bytes，项目会检查多个 Range 的编码、NUL 和控制字符比例；这是启发式分类，不等同于完整文件扫描、病毒检测或内容审核。
+数据库继续使用原 Turso 地址和 Token，R2 继续使用原 bucket 和 S3 API Token。不要导出、复制或重建业务数据。
 
-抽样 MD5 只用于续传和秒传候选查找，不是强完整性证明。默认秒传仅限同一用户。若业务要求零碰撞或跨用户物理去重，应改为完整 SHA-256。
+更新 `infra/r2-cors.json` 中的 workers.dev 子域名和正式域名后，把规则应用到原 R2 bucket。过渡期可同时保留两个 HTTPS 来源，上线稳定后再收紧。
 
-## 生产配置
+## 构建与部署检查
 
-复制 `.env.example` 的配置到 Render：
+```bash
+npm run cf:types
+npm run cf:dry-run
+npm run cf:startup
+```
 
-- `APP_ORIGIN`
-- `COOKIE_SECRET`、`OTP_PEPPER`
-- Turso：`DATABASE_URL`、`DATABASE_AUTH_TOKEN`
-- Render Key Value：`REDIS_URL`
-- R2：`R2_ENDPOINT`、`R2_BUCKET`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
-- 邮件：`MAIL_DRIVER=resend`、`RESEND_API_KEY`、`MAIL_FROM`
+确认检查通过后执行：
 
-Render 免费实例会限制常见 SMTP 出站端口，因此生产 Blueprint 默认通过 Resend HTTPS API 发信。`MAIL_FROM` 必须使用 Resend 已验证域名下的发件地址；未验证域名时可按 Resend 控制台的测试规则配置。API Token 只填写到 Render 环境变量，不要提交到仓库。SMTP 驱动仍保留用于允许 SMTP 出站的其它环境。
+```bash
+npx wrangler deploy
+```
 
-使用 `render.yaml` 创建 Web Service、Key Value 和每小时清理 Cron。将 `infra/r2-cors.json` 中的域名替换为真实 Render 域名，并在 R2 上配置 1 天后中止未完成 multipart 的生命周期规则。应用会把 `R2_ENDPOINT` 的源自动加入页面 CSP 的 `connect-src`，因此上传直连 R2 不会被 CSP 拦截；R2 bucket 的 CORS 配置仍必须允许该 Render 域名的 `PUT` 请求。
+部署到 workers.dev 后按 `cloudflare-migration-plan.md` 第 9 节完成 OTP、分片直传、续传、秒传、预览、Range 下载和 Cron 冒烟测试，再绑定自定义域名。Render 服务在正式域名验证完成前保持运行；`render.yaml` 仅作为回滚配置保留。
 
-## 关键限制
+## 维护命令
 
-- 浏览器刷新后通常不能继续访问原始 `File`，因此需要用户重新选择同一文件再恢复。
-- multipart 的恢复粒度是完整 part，不支持 part 内字节续传。
-- 视频/音频是否可播放仍受浏览器 codec 支持影响。
-- 没有真实 R2/Turso/Redis/Resend 凭据时，只能验证完整本地主流程，不能声称云端合约已经通过。
+`npm run migrate` 和 `npm run cleanup` 是 Node 维护脚本，读取仓库根目录 `.env`。Worker 的每小时清理由 Cron 自动执行，一般无需手动运行 cleanup。
+
+## 安全边界
+
+- Cookie 使用 Hono WebCrypto 签名；迁移切换后旧 Render Cookie 会失效，用户需重新登录一次。
+- OTP、Session、频控和秒传挑战均为带 TTL 的临时数据，不从 Redis 迁移。
+- 允许 JPEG、PNG、GIF、WebP、MP4、WebM、MP3、WAV、OGG、FLAC、M4A、PDF 和纯文本；服务端仍以内容检测为最终裁决。
+- 抽样指纹只用于续传和同用户秒传候选匹配，不作为完整性或安全证明。

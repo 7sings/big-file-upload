@@ -1,6 +1,10 @@
 [
   {
-    "AllowedOrigins": ["http://localhost:5173", "https://YOUR_RENDER_DOMAIN"],
+    "AllowedOrigins": [
+      "http://localhost:8787",
+      "https://big-upload.wuzequn.workers.dev",
+      "https://big-upload.wuzequn.site"
+    ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["content-type"],
     "ExposeHeaders": ["ETag", "Content-Length", "Content-Range"],

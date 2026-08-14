@@ -1,0 +1,11 @@
+# 复制为 .dev.vars，供 wrangler dev 使用。不要提交真实值。
+COOKIE_SECRET=replace-with-at-least-32-characters
+OTP_PEPPER=replace-with-at-least-32-characters
+DATABASE_URL=libsql://your-database.turso.io
+DATABASE_AUTH_TOKEN=
+RESEND_API_KEY=
+MAIL_FROM=Big Upload <no-reply@your-domain.example>
+R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
+R2_BUCKET=big-upload
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
